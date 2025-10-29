@@ -1,6 +1,6 @@
 import { AlertTriangle, X } from 'lucide-react';
 
-export default function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', type = 'warning' }) {
+export default function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', type = 'warning', showNeutralizeOption = false, neutralize = true, onNeutralizeChange }) {
   if (!isOpen) return null;
 
   const typeColors = {
@@ -37,6 +37,28 @@ export default function ConfirmModal({ isOpen, onClose, onConfirm, title, messag
         {/* Body */}
         <div className="p-6">
           <p className="text-gray-600 dark:text-gray-300">{message}</p>
+          
+          {/* Opción de neutralización */}
+          {showNeutralizeOption && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={neutralize}
+                  onChange={(e) => onNeutralizeChange && onNeutralizeChange(e.target.checked)}
+                  className="mt-1 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <div className="flex-1">
+                  <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    Neutralizar base de datos
+                  </span>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    Elimina la licencia Enterprise, desactiva correos, crons y webhooks. Recomendado para desarrollo.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

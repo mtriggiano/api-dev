@@ -73,8 +73,8 @@ export const instances = {
   delete: (name) => 
     api.delete(`/api/instances/${name}`),
   
-  updateDb: (name) => 
-    api.post(`/api/instances/${name}/update-db`),
+  updateDb: (name, neutralize = true) => 
+    api.post(`/api/instances/${name}/update-db`, { neutralize }),
   
   updateFiles: (name) => 
     api.post(`/api/instances/${name}/update-files`),

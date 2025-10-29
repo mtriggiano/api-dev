@@ -212,7 +212,7 @@ class InstanceManager:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def update_instance_db(self, instance_name):
+    def update_instance_db(self, instance_name, neutralize=True):
         """Actualiza la base de datos de una instancia de desarrollo"""
         self._init_paths()
         instance_path = os.path.join(self.dev_root, instance_name)
@@ -222,8 +222,9 @@ class InstanceManager:
             return {'success': False, 'error': 'Script update-db.sh no encontrado'}
         
         try:
-            # Ejecutar script en background con log
-            cmd = f"echo 's' | /bin/bash {script_path} > /tmp/odoo-update-db-{instance_name}.log 2>&1 &"
+            # Responder automáticamente: s para continuar, s/n para neutralizar
+            neutralize_answer = 's' if neutralize else 'n'
+            cmd = f"echo -e 's\\n{neutralize_answer}' | /bin/bash {script_path} > /tmp/odoo-update-db-{instance_name}.log 2>&1 &"
             subprocess.Popen(
                 cmd,
                 shell=True,
@@ -234,10 +235,12 @@ class InstanceManager:
                 cwd=instance_path
             )
             
+            neutralize_msg = " (con neutralización)" if neutralize else " (sin neutralización)"
             return {
                 'success': True,
-                'message': f'Actualización de BD iniciada. Ver logs: /tmp/odoo-update-db-{instance_name}.log',
-                'log_file': f'/tmp/odoo-update-db-{instance_name}.log'
+                'message': f'Actualización de BD iniciada{neutralize_msg}. Ver logs: /tmp/odoo-update-db-{instance_name}.log',
+                'log_file': f'/tmp/odoo-update-db-{instance_name}.log',
+                'neutralize': neutralize
             }
         except Exception as e:
             return {'success': False, 'error': str(e)}

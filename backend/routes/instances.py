@@ -122,7 +122,11 @@ def update_instance_db(instance_name):
         return jsonify({'error': 'Permisos insuficientes'}), 403
     
     try:
-        result = manager.update_instance_db(instance_name)
+        # Obtener parámetro de neutralización (por defecto True)
+        data = request.get_json() or {}
+        neutralize = data.get('neutralize', True)
+        
+        result = manager.update_instance_db(instance_name, neutralize=neutralize)
         
         # Log
         log_action(

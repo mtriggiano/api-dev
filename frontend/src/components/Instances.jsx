@@ -14,7 +14,7 @@ export default function Instances() {
   const [logs, setLogs] = useState('');
   const [activeLogTab, setActiveLogTab] = useState('systemd');
   const [logsLoading, setLogsLoading] = useState(false);
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, action: null, instanceName: null });
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, action: null, instanceName: null, neutralize: true });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [creationLog, setCreationLog] = useState({ show: false, instanceName: '', log: '' });
   const [updateLog, setUpdateLog] = useState({ show: false, instanceName: '', action: '', log: '', completed: false });
@@ -38,7 +38,9 @@ export default function Instances() {
   };
 
   const showConfirmation = (action, instanceName) => {
-    setConfirmModal({ isOpen: true, action, instanceName });
+    // Por defecto, neutralizar en update-db
+    const neutralize = action === 'update-db' ? true : false;
+    setConfirmModal({ isOpen: true, action, instanceName, neutralize });
   };
 
   const handleAction = async (action, instanceName) => {
@@ -50,7 +52,7 @@ export default function Instances() {
       // Para update-db, update-files, sync-filestore y regenerate-assets, mostrar modal con log
       if (action === 'update-db' || action === 'update-files' || action === 'sync-filestore' || action === 'regenerate-assets') {
         response = action === 'update-db' 
-          ? await instances.updateDb(instanceName)
+          ? await instances.updateDb(instanceName, confirmModal.neutralize)
           : action === 'update-files'
           ? await instances.updateFiles(instanceName)
           : action === 'sync-filestore'
@@ -458,13 +460,16 @@ export default function Instances() {
       {/* Modal de confirmación */}
       <ConfirmModal
         isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ isOpen: false, action: null, instanceName: null })}
+        onClose={() => setConfirmModal({ isOpen: false, action: null, instanceName: null, neutralize: true })}
         onConfirm={() => handleAction(confirmModal.action, confirmModal.instanceName)}
         title={getConfirmTitle(confirmModal.action)}
         message={getConfirmMessage(confirmModal.action, confirmModal.instanceName)}
         confirmText="Confirmar"
         cancelText="Cancelar"
         type={confirmModal.action === 'delete' ? 'danger' : 'warning'}
+        showNeutralizeOption={confirmModal.action === 'update-db'}
+        neutralize={confirmModal.neutralize}
+        onNeutralizeChange={(value) => setConfirmModal({ ...confirmModal, neutralize: value })}
       />
 
       {/* Toast de notificaciones */}
