@@ -19,7 +19,7 @@ command -v jq >/dev/null 2>&1 || { echo >&2 "❌ 'jq' no está instalado."; exit
 command -v curl >/dev/null 2>&1 || { echo >&2 "❌ 'curl' no está instalado."; exit 1; }
 
 # Variables desde .env (con valores por defecto para compatibilidad)
-ODOO_ROOT="${PROD_ROOT:-/home/go/apps/production/odoo-enterprise}"
+ODOO_ROOT="${PROD_ROOT:-/home/go/apps/production/odoo}"
 REPO="${ODOO_REPO_PATH:-/home/go/apps/repo/odoo19e.zip}"
 PYTHON="${PYTHON_BIN:-/usr/bin/python3.12}"
 PUERTOS_FILE="${PUERTOS_FILE:-$DATA_PATH/puertos_ocupados_odoo.txt}"
@@ -37,14 +37,12 @@ RAW_NAME="$1"
 if [[ -z "$RAW_NAME" ]]; then echo "❌ Debes pasar el nombre de la instancia."; exit 1; fi
 INSTANCE=$(echo "$RAW_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g')
 
-# Si es la instancia principal, usar nombre desde configuración
-if [[ "$INSTANCE" == "principal" ]] || [[ "$INSTANCE" == "main" ]] || [[ "$INSTANCE" == "production" ]]; then
-  INSTANCE_NAME="${PROD_INSTANCE_NAME:-odoo-production}"
-  USE_ROOT_DOMAIN=true
-else
-  INSTANCE_NAME="$INSTANCE"
-  USE_ROOT_DOMAIN=false
-fi
+# Las instancias de producción siempre usan el dominio raíz
+# El nombre de la instancia se usa solo para identificación interna
+INSTANCE_NAME="$INSTANCE"
+USE_ROOT_DOMAIN=true
+
+echo "ℹ️  Nota: Esta instancia usará el dominio raíz: $CF_ZONE_NAME"
 
 LOG="/tmp/odoo-create-$INSTANCE_NAME.log"
 # Redirigir salida tanto a pantalla como a log

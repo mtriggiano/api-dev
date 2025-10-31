@@ -417,7 +417,7 @@ cat > "$BASE_DIR/update-files.sh" <<'UPDATEFILES'
 #!/bin/bash
 # Script para actualizar archivos de desarrollo desde producción
 
-PROD_DIR="/home/go/apps/production/odoo-enterprise/imac-production"
+PROD_DIR="__PROD_DIR__"
 DEV_DIR="__BASE_DIR__"
 INSTANCE_NAME="__INSTANCE_NAME__"
 
@@ -463,6 +463,7 @@ sudo systemctl start "odoo19e-$INSTANCE_NAME"
 echo "✅ Archivos actualizados correctamente."
 UPDATEFILES
 
+sed -i "s|__PROD_DIR__|$PROD_ROOT/$PROD_INSTANCE|g" "$BASE_DIR/update-files.sh"
 sed -i "s|__BASE_DIR__|$BASE_DIR|g" "$BASE_DIR/update-files.sh"
 sed -i "s/__INSTANCE_NAME__/$INSTANCE_NAME/g" "$BASE_DIR/update-files.sh"
 chmod +x "$BASE_DIR/update-files.sh"
