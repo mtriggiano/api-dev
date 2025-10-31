@@ -1,24 +1,150 @@
-# Backend
-backend/venv/
-backend/__pycache__/
-backend/*.pyc
-backend/.env
-backend/*.log
+# ========================================
+# CREDENCIALES Y CONFIGURACIÓN SENSIBLE
+# ========================================
+.env
+.env.local
+.env.production
+.env.*
+!.env.example
+*.key
+*.pem
+*.cert
+*.crt
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.env.production
-frontend/.env.local
+# ========================================
+# DATOS DEL SISTEMA
+# ========================================
+data/dev-instances.txt
+data/puertos_ocupados_odoo.txt
+data/*.txt
+!data/.gitkeep
 
-# IDE
+# ========================================
+# LOGS Y TEMPORALES
+# ========================================
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*~
+
+# ========================================
+# BASES DE DATOS
+# ========================================
+*.db
+*.sqlite
+*.sqlite3
+backend/instance/
+
+# ========================================
+# PYTHON
+# ========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+.venv
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ========================================
+# NODE.JS
+# ========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+dist/
+build/
+.npm
+.yarn-integrity
+.node_repl_history
+*.tsbuildinfo
+.cache/
+.parcel-cache/
+.next/
+out/
+
+# ========================================
+# SISTEMA OPERATIVO
+# ========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+.directory
+
+# ========================================
+# EDITORES
+# ========================================
+.vscode/
 .idea/
 *.swp
 *.swo
+*.swn
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
 
-# OS
-.DS_Store
-Thumbs.db
+# ========================================
+# BACKUPS Y ARCHIVOS TEMPORALES
+# ========================================
+backup_*/
+*.tar.gz
+*.zip
+!odoo19e.zip
+*.rar
+*.7z
 
-# Logs
-*.log
+# ========================================
+# ARCHIVOS DE MIGRACIÓN TEMPORAL
+# ========================================
+MIGRATION_STATE.md
+script/
+!scripts/
+
+# ========================================
+# ARCHIVOS ESPECÍFICOS DEL PROYECTO
+# ========================================
+# Mantener estructura pero ignorar contenido sensible
+!data/.gitkeep
+!config/.gitkeep
+!logs/.gitkeep

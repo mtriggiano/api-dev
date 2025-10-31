@@ -1,0 +1,5 @@
+init-production.sh
+
+si se pasa el nombre de la instancia por ej go va a crear la instancia de produccion sobre el sub dominio go.grupoorange.ar
+
+si queremos que la instancia se instale en el dominio debemos pasar el parametro ./scripts/odoo/init-production.sh production

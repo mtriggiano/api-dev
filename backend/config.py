@@ -1,8 +1,12 @@
 import os
 from datetime import timedelta
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# Cargar .env desde la raíz del proyecto
+project_root = Path(__file__).parent.parent
+env_path = project_root / '.env'
+load_dotenv(env_path)
 
 class Config:
     # Flask
@@ -17,19 +21,22 @@ class Config:
     SQLALCHEMY_DATABASE_URI = f"postgresql://{os.getenv('DB_USER', 'go')}:{os.getenv('DB_PASSWORD', '!Phax3312!IMAC')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'server_panel')}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Server paths
+    # Server paths - Actualizados para nueva estructura
+    PROJECT_ROOT = os.getenv('PROJECT_ROOT', '/home/go/api-dev')
     PROD_ROOT = os.getenv('PROD_ROOT', '/home/go/apps/production/odoo-enterprise')
     DEV_ROOT = os.getenv('DEV_ROOT', '/home/go/apps/develop/odoo-enterprise')
-    SCRIPTS_PATH = os.getenv('SCRIPTS_PATH', '/home/go/scripts')
-    PUERTOS_FILE = os.getenv('PUERTOS_FILE', '/home/go/puertos_ocupados_odoo.txt')
-    DEV_INSTANCES_FILE = os.getenv('DEV_INSTANCES_FILE', '/home/go/dev-instances.txt')
+    SCRIPTS_PATH = os.getenv('SCRIPTS_PATH', f'{PROJECT_ROOT}/scripts')
+    DATA_PATH = os.getenv('DATA_PATH', f'{PROJECT_ROOT}/data')
+    PUERTOS_FILE = os.getenv('PUERTOS_FILE', f'{DATA_PATH}/puertos_ocupados_odoo.txt')
+    DEV_INSTANCES_FILE = os.getenv('DEV_INSTANCES_FILE', f'{DATA_PATH}/dev-instances.txt')
     
-    # CORS
+    # CORS - Dinámico basado en dominio configurado
+    API_DOMAIN = os.getenv('API_DOMAIN', 'api-dev.hospitalprivadosalta.ar')
     CORS_ORIGINS = [
         'http://localhost:5173',
         'http://localhost:3000',
-        'https://api-dev.hospitalprivadosalta.ar',
-        'http://api-dev.hospitalprivadosalta.ar'
+        f'https://{API_DOMAIN}',
+        f'http://{API_DOMAIN}'
     ]
     
     # GitHub OAuth (opcional - para futuras mejoras con OAuth flow)

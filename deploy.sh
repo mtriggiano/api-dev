@@ -1,18 +1,27 @@
 #!/bin/bash
 
-# 🚀 Script de despliegue del Server Panel
-# Despliega el backend Flask y el frontend React en api-dev.hospitalprivadosalta.ar
+# 🚀 Script de despliegue del Server Panel - Versión refactorizada
+# Despliega el backend Flask y el frontend React
 
 set -e
 
-DOMAIN="api-dev.hospitalprivadosalta.ar"
-API_DIR="/home/go/api"
+# Cargar variables de entorno
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROJECT_ROOT/scripts/utils/load-env.sh"
+
+# Validar variables requeridas
+source "$PROJECT_ROOT/scripts/utils/validate-env.sh" \
+    API_DOMAIN CF_API_TOKEN DOMAIN_ROOT PUBLIC_IP \
+    DB_USER DB_PASSWORD SECRET_KEY JWT_SECRET_KEY
+
+DOMAIN="${API_DOMAIN}"
+API_DIR="${PROJECT_ROOT:-/home/go/api-dev}"
 BACKEND_DIR="$API_DIR/backend"
 FRONTEND_DIR="$API_DIR/frontend"
-USER="go"
-PUBLIC_IP="200.69.140.2"
-CF_API_TOKEN="JK1cCBg776SHiZX9T6Ky5b2gtjMkpUsNHxVyQ0Vs"
-CF_ZONE_NAME="hospitalprivadosalta.ar"
+USER="${SYSTEM_USER:-go}"
+PUBLIC_IP="${PUBLIC_IP}"
+CF_API_TOKEN="${CF_API_TOKEN}"
+CF_ZONE_NAME="${DOMAIN_ROOT}"
 
 echo "🚀 Iniciando despliegue del Server Panel..."
 
@@ -123,7 +132,7 @@ npm run build
 
 # Ajustar permisos para que Nginx pueda leer los archivos
 chmod -R 755 "$FRONTEND_DIR/dist"
-chmod 755 /home/$USER /home/$USER/api /home/$USER/api/frontend
+chmod 755 /home/$USER "$API_DIR" "$FRONTEND_DIR"
 
 echo "✅ Frontend construido"
 
@@ -190,7 +199,7 @@ echo ""
 echo "📋 Información del despliegue:"
 echo "   🌐 URL: https://$DOMAIN"
 echo "   👤 Usuario: admin"
-echo "   🔑 Contraseña: admin123 (cambiar después del primer login)"
+echo "   🔑 Contraseña: Pipoloko09 (cambiar después del primer login)"
 echo ""
 echo "📜 Comandos útiles:"
 echo "   Ver logs del backend: sudo journalctl -u server-panel-api -f"

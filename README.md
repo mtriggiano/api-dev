@@ -1,6 +1,45 @@
-# 🖥️ Server Panel - Panel de Control del Servidor
+# 🖥️ API-DEV - Sistema de Gestión de Instancias Odoo
 
-Panel de control profesional para gestionar instancias Odoo y monitorear el servidor Ubuntu.
+**Sistema profesional para gestionar instancias Odoo y monitorear el servidor Ubuntu**
+
+⚠️ **IMPORTANTE**: Este proyecto ha sido refactorizado para facilitar el despliegue en nuevos entornos. Todas las configuraciones sensibles ahora se manejan mediante variables de entorno.
+
+---
+
+## 🆕 Versión 2.0 - Refactorizada
+
+✅ **Configuración centralizada** - Todo en archivo `.env`  
+✅ **Despliegue automatizado** - Script `quickstart.sh` interactivo  
+✅ **Seguridad mejorada** - Sin credenciales hardcodeadas  
+✅ **Estructura organizada** - Proyecto completamente modular  
+✅ **Documentación completa** - Guías paso a paso  
+
+### 📊 Estado del Sistema
+```bash
+# Verificación rápida
+./check-system.sh
+```
+
+## 🎆 Inicio Rápido
+
+### Configuración Inicial (Primera vez)
+
+```bash
+# 1. Ejecutar el script de configuración interactivo
+./quickstart.sh
+
+# 2. Verificar la configuración
+source scripts/utils/validate-env.sh --full
+
+# 3. Desplegar el panel de control
+./deploy.sh
+```
+
+### Acceso
+
+- **URL**: Configurada durante el quickstart (ej: https://api-dev.tudominio.com)
+- **Usuario por defecto**: admin
+- **Contraseña por defecto**: admin123 (cambiar después del primer login)
 
 ## 🚀 Características
 
@@ -43,49 +82,55 @@ Panel de control profesional para gestionar instancias Odoo y monitorear el serv
 
 👉 **Ver documentación completa:** [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md)
 
-## 📁 Estructura del Proyecto
+## 📁 Estructura del Proyecto (Refactorizada)
 
 ```
-/home/go/api/
+/home/go/api-dev/
+├── .env                        # ⭐ Variables de entorno (NO versionado)
+├── .env.example                # Plantilla para nuevos entornos
+├── .gitignore                  # Protección de credenciales
+├── quickstart.sh               # ⭐ Script interactivo de configuración
+├── deploy.sh                   # Script de despliegue
+├── README.md                   # Este archivo
+│
 ├── backend/                    # Flask API
 │   ├── app.py                 # Aplicación principal
-│   ├── config.py              # Configuración
+│   ├── config.py              # Configuración (usa .env)
 │   ├── models.py              # Modelos de BD
 │   ├── wsgi.py                # Entry point para Gunicorn
-│   ├── routes/                # Endpoints
-│   │   ├── auth.py           # Autenticación
-│   │   ├── metrics.py        # Métricas del sistema
-│   │   ├── instances.py      # Gestión de instancias
-│   │   ├── logs.py           # Logs de acciones
-│   │   ├── backup.py         # Backups
-│   │   └── github.py         # Integración GitHub (nuevo)
+│   ├── routes/                # Endpoints API
 │   ├── services/              # Lógica de negocio
-│   │   ├── system_monitor.py # Monitor del sistema
-│   │   ├── instance_manager.py # Gestor de instancias
-│   │   ├── backup_manager.py  # Gestor de backups
-│   │   └── git_manager.py     # Gestor Git/GitHub (nuevo)
-│   ├── requirements.txt       # Dependencias Python
-│   ├── .env                   # Variables de entorno
-│   └── .env.example           # Ejemplo de .env
+│   └── requirements.txt       # Dependencias Python
+│
 ├── frontend/                   # React + Vite
-│   ├── src/
-│   │   ├── components/        # Componentes React
-│   │   │   ├── Login.jsx     # Pantalla de login
-│   │   │   ├── Dashboard.jsx # Dashboard principal
-│   │   │   ├── Instances.jsx # Gestión de instancias
-│   │   │   ├── Logs.jsx      # Logs de acciones
-│   │   │   └── Layout.jsx    # Layout principal
-│   │   ├── lib/
-│   │   │   ├── api.js        # Cliente API (Axios)
-│   │   │   └── utils.js      # Utilidades
-│   │   ├── App.jsx           # Componente raíz
-│   │   ├── main.jsx          # Entry point
-│   │   └── index.css         # Estilos globales
+│   ├── src/                   # Código fuente
 │   ├── package.json           # Dependencias Node
-│   ├── vite.config.js         # Configuración Vite
-│   └── tailwind.config.js     # Configuración Tailwind
-├── deploy.sh                   # Script de despliegue
-└── README.md                   # Este archivo
+│   └── vite.config.js         # Configuración Vite
+│
+├── scripts/                    # ⭐ Scripts de gestión
+│   ├── odoo/                  # Scripts de Odoo
+│   │   ├── init-production.sh       # Crear instancia producción
+│   │   ├── remove-production.sh     # Eliminar instancia producción
+│   │   ├── create-dev-instance.sh   # Crear instancia desarrollo
+│   │   ├── remove-dev-instance.sh   # Eliminar instancia desarrollo
+│   │   ├── backup-production.sh     # Backup de producción
+│   │   └── neutralize-database.py   # Neutralizar BD desarrollo
+│   └── utils/                 # Utilidades
+│       ├── load-env.sh        # Cargar variables de entorno
+│       └── validate-env.sh    # Validar configuración
+│
+├── data/                       # ⭐ Datos del sistema
+│   ├── dev-instances.txt      # Registro de instancias dev
+│   └── puertos_ocupados_odoo.txt # Puertos en uso
+│
+├── docs/                       # Documentación
+│   ├── QUICKSTART.md          # Guía de inicio rápido
+│   ├── INSTALL.md             # Instalación manual
+│   ├── GITHUB_INTEGRATION.md  # Integración con GitHub
+│   └── [otros documentos]
+│
+└── config/                     # Templates de configuración
+    └── [templates futuros]
 ```
 
 ## 🛠️ Instalación y Despliegue
@@ -99,11 +144,14 @@ Panel de control profesional para gestionar instancias Odoo y monitorear el serv
 - Nginx
 - Certbot
 
-### Despliegue Automático
+### Despliegue Automático (Nuevo Método)
 
 ```bash
-cd /home/go/api
-chmod +x deploy.sh
+# Primera vez - Configuración inicial
+cd /home/go/api-dev
+./quickstart.sh
+
+# Desplegar el sistema
 ./deploy.sh
 ```
 
@@ -117,37 +165,39 @@ El script automáticamente:
 7. Crea servicio systemd
 8. Configura cron para métricas
 
-### Acceso
+### Gestión de Instancias Odoo
 
-- **URL**: https://api-dev.hospitalprivadosalta.ar
-- **Usuario**: admin
-- **Contraseña**: admin123 (cambiar después del primer login)
+```bash
+# Crear instancia de producción
+./scripts/odoo/init-production.sh production
+
+# Crear instancia de desarrollo
+./scripts/odoo/create-dev-instance.sh nombre-desarrollador
+
+# Hacer backup de producción
+./scripts/odoo/backup-production.sh
+```
 
 ## 🔧 Configuración
 
-### Variables de Entorno (Backend)
+### Variables de Entorno
 
-Editar `/home/go/api/backend/.env`:
+Todas las configuraciones se manejan desde el archivo `.env` en la raíz del proyecto.
 
-```env
-FLASK_ENV=production
-SECRET_KEY=tu-secret-key
-JWT_SECRET_KEY=tu-jwt-secret-key
+**⚠️ IMPORTANTE**: 
+- El archivo `.env` se genera automáticamente con `./quickstart.sh`
+- NUNCA versiones el archivo `.env` en Git
+- Usa `.env.example` como referencia para nuevos entornos
+- Mantén permisos seguros: `chmod 600 .env`
 
-# PostgreSQL
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=server_panel
-DB_USER=go
-DB_PASSWORD=!Phax3312!IMAC
+Variables principales:
+- `DOMAIN_ROOT`: Tu dominio principal
+- `CF_API_TOKEN`: Token de Cloudflare
+- `DB_PASSWORD`: Contraseña de PostgreSQL
+- `ODOO_ADMIN_PASSWORD`: Contraseña admin de Odoo
+- `PROD_INSTANCE_NAME`: Nombre de instancia producción (default: odoo-production)
 
-# Rutas del servidor
-PROD_ROOT=/home/go/apps/production/odoo-enterprise
-DEV_ROOT=/home/go/apps/develop/odoo-enterprise
-SCRIPTS_PATH=/home/go/scripts
-PUERTOS_FILE=/home/go/puertos_ocupados_odoo.txt
-DEV_INSTANCES_FILE=/home/go/dev-instances.txt
-```
+Ver `.env.example` para la lista completa de variables.
 
 ## 📊 API Endpoints
 

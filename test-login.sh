@@ -7,7 +7,7 @@ echo ""
 echo "1️⃣ Test backend directo (localhost:5000):"
 RESPONSE=$(curl -s -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}')
+  -d '{"username":"admin","password":"Pipoloko09"}')
 
 if echo "$RESPONSE" | grep -q "access_token"; then
   echo "   ✅ Backend funciona correctamente"
@@ -22,9 +22,9 @@ echo ""
 
 # Test 2: A través de Nginx (HTTPS)
 echo "2️⃣ Test a través de Nginx (HTTPS):"
-RESPONSE=$(curl -s -X POST https://api-dev.hospitalprivadosalta.ar/api/auth/login \
+RESPONSE=$(curl -s -X POST https://api-dev.grupoorange.ar/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}')
+  -d '{"username":"admin","password":"Pipoloko09"}')
 
 if echo "$RESPONSE" | grep -q "access_token"; then
   echo "   ✅ Nginx + Backend funciona correctamente"
@@ -39,7 +39,7 @@ echo ""
 
 # Test 3: Frontend carga
 echo "3️⃣ Test frontend carga:"
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api-dev.hospitalprivadosalta.ar/)
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api-dev.grupoorange.ar/)
 
 if [ "$STATUS" = "200" ]; then
   echo "   ✅ Frontend carga correctamente (HTTP $STATUS)"
@@ -53,9 +53,9 @@ echo "   - Backend: ✅"
 echo "   - API a través de Nginx: ✅"
 echo "   - Frontend: ✅"
 echo ""
-echo "🌐 Accede a: https://api-dev.hospitalprivadosalta.ar"
+echo "🌐 Accede a: https://api-dev.grupoorange.ar"
 echo "👤 Usuario: admin"
-echo "🔑 Contraseña: admin123"
+echo "🔑 Contraseña: Pipoloko09"
 echo ""
 echo "💡 Si aún tienes problemas:"
 echo "   1. Limpia caché del navegador (Ctrl+Shift+Del)"
