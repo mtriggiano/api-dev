@@ -191,27 +191,32 @@ class InstanceManager:
             return {'success': False, 'error': 'Script de eliminación no encontrado'}
         
         try:
-            # Ejecutar script con confirmación automática
-            process = subprocess.Popen(
-                ['/bin/bash', script_path],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            # Enviar nombre de instancia y confirmación
-            # El script espera el nombre sin "dev-" y luego BORRAR con el nombre completo
-            name_without_prefix = instance_name.replace('dev-', '')
-            stdout, stderr = process.communicate(
-                input=f"{name_without_prefix}\nBORRAR{instance_name}\n",
-                timeout=60
-            )
+            # Ejecutar script con confirmación automática y guardar log
+            with open(f'/tmp/odoo-delete-{instance_name}.log', 'w') as log_file:
+                process = subprocess.Popen(
+                    ['/bin/bash', script_path],
+                    stdin=subprocess.PIPE,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+                
+                # Enviar nombre de instancia y confirmación
+                # El script espera el nombre sin "dev-" y luego BORRAR con el nombre completo
+                name_without_prefix = instance_name.replace('dev-', '')
+                process.stdin.write(f"{name_without_prefix}\nBORRAR{instance_name}\n")
+                process.stdin.close()
+                
+                # Esperar hasta 5 minutos para la eliminación
+                process.wait(timeout=300)
             
             if process.returncode == 0:
-                return {'success': True, 'message': f'Instancia {instance_name} eliminada', 'output': stdout}
+                return {'success': True, 'message': f'Instancia {instance_name} eliminada', 'log_file': f'/tmp/odoo-delete-{instance_name}.log'}
             else:
-                return {'success': False, 'error': stderr or stdout}
+                # Leer el log para ver qué falló
+                with open(f'/tmp/odoo-delete-{instance_name}.log', 'r') as log_file:
+                    error_log = log_file.read()
+                return {'success': False, 'error': f'Error en eliminación. Ver log: /tmp/odoo-delete-{instance_name}.log', 'log': error_log}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     

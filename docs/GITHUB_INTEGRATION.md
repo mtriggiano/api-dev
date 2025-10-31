@@ -19,12 +19,21 @@ Esta guía explica cómo usar la integración de GitHub para gestionar el contro
 
 Necesitas crear un Personal Access Token (PAT) en GitHub con los siguientes permisos:
 
-1. Ve a GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
-2. Click en "Generate new token (classic)"
-3. Selecciona los siguientes scopes:
-   - ✅ `repo` (acceso completo a repositorios privados)
-   - ✅ `user:email` (acceso a tu email)
-4. Genera el token y **guárdalo en un lugar seguro** (no podrás verlo de nuevo)
+1. Ve a GitHub → **Settings** (tu perfil)
+2. Scroll hasta el final → **Developer settings**
+3. Click en **Personal access tokens**
+4. Click en **Tokens (classic)**
+5. Click en **Generate new token**
+6. Click en **Generate new token (classic)**
+7. Dale un nombre descriptivo (ej: "Odoo Dev Panel")
+8. Selecciona una expiración (recomendado: 90 días o sin expiración)
+9. Selecciona los siguientes scopes:
+   - ✅ **`repo`** (acceso completo a repositorios privados) - **IMPORTANTE: Marca la casilla principal "repo" que automáticamente marca todas las sub-opciones**
+   - ✅ **`user:email`** (acceso a tu email)
+10. Scroll hasta el final y click en **Generate token**
+11. **COPIA EL TOKEN INMEDIATAMENTE** y guárdalo en un lugar seguro (no podrás verlo de nuevo)
+    - El token debe empezar con `ghp_` seguido de caracteres alfanuméricos
+    - Ejemplo: `ghp_1234567890abcdefghijklmnopqrstuvwxyz`
 
 ### 2. Repositorio GitHub
 

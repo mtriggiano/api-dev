@@ -52,8 +52,9 @@ class GitManager:
         """Realiza una petición a la API de GitHub"""
         url = f"{self.GITHUB_API_BASE}{endpoint}"
         headers = {
-            'Authorization': f'token {token}',
-            'Accept': 'application/vnd.github.v3+json'
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
         }
         
         try:

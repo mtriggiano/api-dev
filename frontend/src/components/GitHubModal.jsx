@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Github, CheckCircle, XCircle, Loader, AlertCircle } from 'lucide-react';
+import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { github } from '../lib/api';
 
 export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }) {
@@ -14,6 +14,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
   const [gitStatus, setGitStatus] = useState(null);
   const [gitLoading, setGitLoading] = useState(false);
   const [gitSuccess, setGitSuccess] = useState('');
+  const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
     if (isOpen && instanceName) {
@@ -161,7 +162,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
         repo_owner: repo.owner,
         repo_name: repo.name,
         repo_branch: instanceName, // Usar el nombre de la instancia como rama
-        local_path: `/home/go/apps/develop/odoo-enterprise/${instanceName}/custom_addons`
+        local_path: `/home/go/apps/develop/odoo/${instanceName}/custom_addons`
       };
 
       const configResponse = await github.createConfig(configData);
@@ -350,6 +351,87 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
         {/* Formulario de entrada */}
         {step === 'input' && (
           <div className="space-y-4">
+            {/* Acordeón de instrucciones */}
+            <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setShowInstructions(!showInstructions)}
+                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between text-left"
+              >
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  📖 ¿Cómo generar un token de GitHub?
+                </span>
+                {showInstructions ? (
+                  <ChevronUp className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                )}
+              </button>
+              
+              {showInstructions && (
+                <div className="px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-600">
+                  <ol className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">1.</span>
+                      <span>Ve a GitHub → <strong>Settings</strong> (tu perfil, arriba a la derecha)</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">2.</span>
+                      <span>Scroll hasta el final → <strong>Developer settings</strong></span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">3.</span>
+                      <span><strong>Personal access tokens</strong> → <strong>Tokens (classic)</strong></span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">4.</span>
+                      <span><strong>Generate new token</strong> → <strong>Generate new token (classic)</strong></span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">5.</span>
+                      <span>Dale un nombre (ej: "Odoo Dev Panel")</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">6.</span>
+                      <span>Selecciona expiración (recomendado: 90 días o sin expiración)</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">7.</span>
+                      <div className="flex-1">
+                        <div>Marca estos scopes:</div>
+                        <ul className="ml-4 mt-1 space-y-1">
+                          <li className="flex items-center gap-2">
+                            <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
+                            <strong>repo</strong> (marca la casilla principal, incluye todas las sub-opciones)
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
+                            <strong>user:email</strong>
+                          </li>
+                        </ul>
+                      </div>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">8.</span>
+                      <span>Scroll hasta el final → <strong>Generate token</strong></span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 min-w-[20px]">9.</span>
+                      <span><strong className="text-red-600 dark:text-red-400">¡COPIA EL TOKEN INMEDIATAMENTE!</strong> (empieza con <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">ghp_</code>)</span>
+                    </li>
+                  </ol>
+                  <a
+                    href="https://github.com/settings/tokens/new"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Ir a crear token en GitHub
+                  </a>
+                </div>
+              )}
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Token de GitHub
@@ -362,7 +444,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Genera un token en GitHub Settings → Developer settings → Personal access tokens
+                El token debe empezar con <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">ghp_</code>
               </p>
             </div>
 
