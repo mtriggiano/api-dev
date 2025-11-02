@@ -72,7 +72,15 @@ source scripts/utils/validate-env.sh --full
 - **Sesiones**: Control de acceso
 - **Logs de auditoría**: Todas las acciones
 
-### Integración GitHub (Nuevo) 🔗
+### Gestión de Backups y Restauración (Nuevo) 💾
+- **Backup de producción**: Crear backups completos (BD + archivos)
+- **Subir backups**: Carga chunked para archivos grandes (hasta 1GB)
+- **Listar backups**: Ver todos los backups disponibles con detalles
+- **Restaurar producción**: Restaurar BD y archivos desde backup
+- **Gestión automática**: Scripts de backup y restauración
+- **Progreso en tiempo real**: Seguimiento de carga y restauración
+
+### Integración GitHub 🔗
 - **Control de versiones**: Git para custom addons
 - **Vincular cuenta GitHub**: Conectar repositorios personales
 - **Operaciones Git**: Commit, push, pull desde el panel
@@ -225,7 +233,14 @@ Ver `.env.example` para la lista completa de variables.
 - `GET /api/logs?instance=&action=&hours=24` - Listar logs
 - `GET /api/logs/stats?hours=24` - Estadísticas
 
-### GitHub (Nuevo)
+### Backups (Nuevo)
+- `GET /api/backup/list` - Listar todos los backups disponibles
+- `POST /api/backup/create` - Crear backup de producción
+- `POST /api/backup/upload` - Subir archivo de backup (chunked)
+- `POST /api/backup/restore` - Restaurar producción desde backup
+- `GET /api/backup/status/:task_id` - Estado de tarea de backup/restore
+
+### GitHub
 - `POST /api/github/verify-token` - Verificar token de GitHub
 - `GET /api/github/repos` - Listar repositorios del usuario
 - `GET /api/github/config` - Listar configuraciones
@@ -250,6 +265,7 @@ Ver `.env.example` para la lista completa de variables.
 - ✅ Reiniciar instancias
 - ✅ Eliminar instancias
 - ✅ Ver logs
+- ✅ Gestión de Backups (crear, subir, restaurar)
 - ✅ Gestión GitHub (vincular, commit, push, pull)
 
 ### Developer
@@ -260,6 +276,7 @@ Ver `.env.example` para la lista completa de variables.
 - ✅ Reiniciar instancias
 - ❌ Eliminar instancias
 - ✅ Ver logs
+- ✅ Ver backups (solo listar)
 - ✅ Gestión GitHub (vincular, commit, push, pull)
 
 ### Viewer
@@ -270,6 +287,7 @@ Ver `.env.example` para la lista completa de variables.
 - ❌ Reiniciar instancias
 - ❌ Eliminar instancias
 - ✅ Ver logs
+- ✅ Ver backups (solo listar)
 - ❌ Gestión GitHub
 
 ## 🛠️ Comandos Útiles
@@ -416,11 +434,13 @@ grep CRON /var/log/syslog
 
 1. **Cambiar contraseña por defecto**: Después del primer login, cambiar la contraseña del usuario admin
 2. **Backup de BD**: Hacer backups regulares de la base de datos `server_panel`
-3. **Logs**: Los logs de acciones se guardan en la BD y pueden crecer. Considerar limpieza periódica
-4. **Métricas**: Se guardan cada minuto. Considerar limpieza de métricas antiguas
-5. **Permisos sudo**: El usuario `go` necesita permisos sudo para gestionar servicios systemd
-6. **GitHub Tokens**: Los tokens de acceso se almacenan en BD. En producción, considerar encriptación
-7. **Integración GitHub**: Ver [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md) para guía completa
+3. **Backups de Odoo**: Los backups se almacenan en `/home/go/backups` y pueden ocupar mucho espacio. Considerar limpieza periódica
+4. **Carga de archivos**: El sistema soporta archivos hasta 1GB usando carga chunked
+5. **Logs**: Los logs de acciones se guardan en la BD y pueden crecer. Considerar limpieza periódica
+6. **Métricas**: Se guardan cada minuto. Considerar limpieza de métricas antiguas
+7. **Permisos sudo**: El usuario `go` necesita permisos sudo para gestionar servicios systemd
+8. **GitHub Tokens**: Los tokens de acceso se almacenan en BD. En producción, considerar encriptación
+9. **Integración GitHub**: Ver [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md) para guía completa
 
 ## 🆘 Soporte
 
