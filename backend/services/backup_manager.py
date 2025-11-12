@@ -69,14 +69,15 @@ class BackupManager:
         
         # Leer crontab actual
         try:
-            result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+            result = subprocess.run(['/usr/bin/crontab', '-l'], capture_output=True, text=True)
             current_cron = result.stdout if result.returncode == 0 else ""
-        except:
+        except Exception as e:
+            print(f"Error reading crontab: {e}")
             current_cron = ""
         
         # Eliminar líneas antiguas del backup
         lines = [line for line in current_cron.split('\n') 
-                if cron_comment not in line and script_path not in line]
+                if cron_comment not in line and script_path not in line and line.strip()]
         
         # Agregar nueva línea si está habilitado
         if self.config['auto_backup_enabled']:
@@ -85,8 +86,11 @@ class BackupManager:
         
         # Escribir nuevo crontab
         new_cron = '\n'.join(lines) + '\n'
-        process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=new_cron)
+        try:
+            process = subprocess.Popen(['/usr/bin/crontab', '-'], stdin=subprocess.PIPE, text=True)
+            process.communicate(input=new_cron)
+        except Exception as e:
+            raise Exception(f"Error updating crontab: {e}")
     
     def create_backup(self):
         """Crea un nuevo backup"""
@@ -419,8 +423,77 @@ class BackupManager:
                 os.remove(temp_path)
             return {'success': False, 'error': str(e)}
     
-    @staticmethod
-    def _human_readable_size(size_bytes):
+    def get_cron_status(self):
+        """Obtiene el estado del servicio cron y el crontab actual"""
+        try:
+            # Verificar estado del servicio cron
+            cron_status_result = subprocess.run(
+                ['/usr/bin/sudo', '/usr/bin/systemctl', 'is-active', 'cron'],
+                capture_output=True,
+                text=True
+            )
+            cron_active = cron_status_result.returncode == 0
+            
+            # Leer crontab actual
+            crontab_result = subprocess.run(
+                ['/usr/bin/crontab', '-l'],
+                capture_output=True,
+                text=True
+            )
+            
+            if crontab_result.returncode == 0:
+                crontab_content = crontab_result.stdout
+                # Buscar línea de backup
+                backup_line = None
+                for line in crontab_content.split('\n'):
+                    if 'backup-production.sh' in line and not line.strip().startswith('#'):
+                        backup_line = line.strip()
+                        break
+            else:
+                crontab_content = "No crontab configured"
+                backup_line = None
+            
+            return {
+                'success': True,
+                'cron_service_active': cron_active,
+                'cron_service_status': 'active' if cron_active else 'inactive',
+                'crontab_configured': backup_line is not None,
+                'backup_schedule': backup_line if backup_line else 'Not configured',
+                'crontab_content': crontab_content,
+                'auto_backup_enabled': self.config['auto_backup_enabled']
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def restart_cron_service(self):
+        """Reinicia el servicio cron"""
+        try:
+            result = subprocess.run(
+                ['/usr/bin/sudo', '/usr/bin/systemctl', 'restart', 'cron'],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                return {
+                    'success': True,
+                    'message': 'Servicio cron reiniciado exitosamente'
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f'Error al reiniciar cron: {result.stderr}'
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def _human_readable_size(self, size_bytes):
         """Convierte bytes a formato legible"""
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if size_bytes < 1024.0:

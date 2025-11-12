@@ -266,6 +266,53 @@ def get_restore_log():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@backup_bp.route('/cron/status', methods=['GET'])
+@jwt_required()
+def get_cron_status():
+    """Obtiene el estado del servicio cron"""
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    
+    # Solo admin puede ver estado del cron
+    if user.role != 'admin':
+        return jsonify({'error': 'Permisos insuficientes'}), 403
+    
+    try:
+        result = manager.get_cron_status()
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@backup_bp.route('/cron/restart', methods=['POST'])
+@jwt_required()
+def restart_cron():
+    """Reinicia el servicio cron"""
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    
+    # Solo admin puede reiniciar cron
+    if user.role != 'admin':
+        return jsonify({'error': 'Permisos insuficientes'}), 403
+    
+    try:
+        result = manager.restart_cron_service()
+        
+        if result['success']:
+            log_action(
+                user_id,
+                'restart_cron',
+                'system',
+                'Servicio cron reiniciado',
+                'success'
+            )
+        else:
+            log_action(user_id, 'restart_cron', 'system', result.get('error'), 'error')
+        
+        return jsonify(result), 200 if result['success'] else 500
+    except Exception as e:
+        log_action(user_id, 'restart_cron', 'system', str(e), 'error')
+        return jsonify({'error': str(e)}), 500
+
 @backup_bp.route('/upload', methods=['POST'])
 @jwt_required()
 def upload_backup():

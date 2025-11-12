@@ -149,6 +149,12 @@ export const backup = {
       },
     });
   },
+  
+  getCronStatus: () => 
+    api.get('/api/backup/cron/status'),
+  
+  restartCron: () => 
+    api.post('/api/backup/cron/restart'),
 };
 
 export const github = {
