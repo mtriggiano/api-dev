@@ -190,6 +190,7 @@ check_command "curl" || DEPS_OK=false
 check_command "jq" || DEPS_OK=false
 check_command "node" || DEPS_OK=false
 check_command "npm" || DEPS_OK=false
+check_command "crontab" || DEPS_OK=false
 
 # Verificación especial para Git en /usr/bin/git (requerido para integración GitHub)
 if [ -f "/usr/bin/git" ]; then
@@ -202,6 +203,17 @@ else
         print_info "Git encontrado en: $GIT_PATH"
         print_info "Puedes crear un symlink: sudo ln -s $GIT_PATH /usr/bin/git"
     fi
+fi
+
+# Verificación del servicio cron (requerido para backups automáticos)
+if systemctl is-active --quiet cron 2>/dev/null; then
+    print_success "Servicio cron está activo (requerido para backups automáticos)"
+elif systemctl is-active --quiet crond 2>/dev/null; then
+    print_success "Servicio crond está activo (requerido para backups automáticos)"
+else
+    print_warning "Servicio cron NO está activo"
+    print_info "Los backups automáticos requieren el servicio cron"
+    print_info "Para activarlo: sudo systemctl enable --now cron"
 fi
 
 if [ "$DEPS_OK" = false ]; then

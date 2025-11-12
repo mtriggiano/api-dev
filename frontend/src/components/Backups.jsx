@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { backup } from '../lib/api';
-import { Database, Download, Trash2, RefreshCw, Settings, HardDrive, Calendar, Clock, AlertCircle, RotateCcw, AlertTriangle, CheckCircle2, XCircle, Upload } from 'lucide-react';
+import { Database, Download, Trash2, RefreshCw, Settings, HardDrive, Calendar, Clock, AlertCircle, RotateCcw, AlertTriangle, CheckCircle2, XCircle, Upload, Power, Activity } from 'lucide-react';
 import Toast from './Toast';
 
 export default function Backups() {
@@ -18,11 +18,17 @@ export default function Backups() {
   const [showRestoreLogModal, setShowRestoreLogModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [stats, setStats] = useState({ count: 0, total_size_human: '0 B' });
+  const [cronStatus, setCronStatus] = useState(null);
+  const [loadingCronStatus, setLoadingCronStatus] = useState(false);
 
   useEffect(() => {
     fetchBackups();
     fetchConfig();
-    const interval = setInterval(fetchBackups, 30000); // Actualizar cada 30 segundos
+    fetchCronStatus();
+    const interval = setInterval(() => {
+      fetchBackups();
+      fetchCronStatus();
+    }, 30000); // Actualizar cada 30 segundos
     return () => clearInterval(interval);
   }, []);
 
@@ -47,6 +53,34 @@ export default function Backups() {
       setConfig(response.data);
     } catch (error) {
       console.error('Error fetching config:', error);
+    }
+  };
+
+  const fetchCronStatus = async () => {
+    try {
+      const response = await backup.getCronStatus();
+      if (response.data.success) {
+        setCronStatus(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching cron status:', error);
+    }
+  };
+
+  const handleRestartCron = async () => {
+    setLoadingCronStatus(true);
+    try {
+      const response = await backup.restartCron();
+      if (response.data.success) {
+        setToast({ show: true, message: 'Servicio cron reiniciado exitosamente', type: 'success' });
+        setTimeout(() => fetchCronStatus(), 2000);
+      } else {
+        setToast({ show: true, message: response.data.error || 'Error al reiniciar cron', type: 'error' });
+      }
+    } catch (error) {
+      setToast({ show: true, message: error.response?.data?.error || 'Error al reiniciar cron', type: 'error' });
+    } finally {
+      setLoadingCronStatus(false);
     }
   };
 
@@ -266,7 +300,7 @@ export default function Backups() {
       </div>
 
       {/* Tarjetas de estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
@@ -300,6 +334,36 @@ export default function Backups() {
               <p className="text-sm text-gray-600 dark:text-gray-400">Retención</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{config.retention_days || 7} días</p>
             </div>
+          </div>
+        </div>
+
+        {/* Estado del Servicio Cron */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-3 rounded-lg ${cronStatus?.cron_service_active ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                <Activity className={`w-6 h-6 ${cronStatus?.cron_service_active ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Servicio Cron</p>
+                <p className={`text-lg font-bold ${cronStatus?.cron_service_active ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {cronStatus?.cron_service_active ? 'Activo' : 'Inactivo'}
+                </p>
+                {cronStatus?.crontab_configured && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    ✓ Backup programado
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleRestartCron}
+              disabled={loadingCronStatus}
+              className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+              title="Reiniciar servicio cron"
+            >
+              <Power className={`w-5 h-5 ${loadingCronStatus ? 'animate-spin' : ''}`} />
+            </button>
           </div>
         </div>
       </div>
