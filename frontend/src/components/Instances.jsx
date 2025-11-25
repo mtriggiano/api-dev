@@ -682,6 +682,19 @@ function InstanceCard({ instance, onAction, onViewLogs, onGitHub, actionLoading,
           </>
         )}
         
+        {/* Botón de regenerar assets para producción */}
+        {isProduction && (
+          <button
+            onClick={() => onAction('regenerate-assets', instance.name)}
+            disabled={actionLoading[`regenerate-assets-${instance.name}`]}
+            title="Regenerar assets (CSS, JS, iconos) de Odoo"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Palette className="w-4 h-4" />
+            <span className="hidden sm:inline">Assets</span>
+          </button>
+        )}
+        
         <button
           onClick={() => onViewLogs(instance.name)}
           title="Ver los logs del servicio systemd"

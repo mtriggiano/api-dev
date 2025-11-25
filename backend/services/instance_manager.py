@@ -451,9 +451,20 @@ class InstanceManager:
             return {'success': False, 'error': str(e)}
     
     def regenerate_assets(self, instance_name):
-        """Regenera los assets de una instancia de desarrollo"""
+        """Regenera los assets de una instancia (producción o desarrollo)"""
         self._init_paths()
-        instance_path = os.path.join(self.dev_root, instance_name)
+        
+        # Determinar si es producción o desarrollo
+        dev_path = os.path.join(self.dev_root, instance_name)
+        prod_path = os.path.join(self.prod_root, instance_name)
+        
+        if os.path.exists(dev_path):
+            instance_path = dev_path
+        elif os.path.exists(prod_path):
+            instance_path = prod_path
+        else:
+            return {'success': False, 'error': f'Instancia {instance_name} no encontrada'}
+        
         script_path = os.path.join(instance_path, 'regenerate-assets.sh')
         
         if not os.path.exists(script_path):
