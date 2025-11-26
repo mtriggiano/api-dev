@@ -465,26 +465,26 @@ class InstanceManager:
         else:
             return {'success': False, 'error': f'Instancia {instance_name} no encontrada'}
         
-        script_path = os.path.join(instance_path, 'regenerate-assets.sh')
+        # Usar script centralizado desde api-dev
+        centralized_script = '/home/go/api-dev/scripts/odoo/regenerate-assets.sh'
         
-        if not os.path.exists(script_path):
-            return {'success': False, 'error': 'Script regenerate-assets.sh no encontrado'}
+        if not os.path.exists(centralized_script):
+            return {'success': False, 'error': 'Script centralizado regenerate-assets.sh no encontrado'}
+        
+        # Determinar ambiente basado en la ruta
+        environment = 'develop' if '/develop/' in instance_path else 'production'
         
         try:
-            # Ejecutar script en background con log
+            # Ejecutar script centralizado en background con log
             with open(f'/tmp/odoo-regenerate-assets-{instance_name}.log', 'w') as log_file:
                 process = subprocess.Popen(
-                    ['/bin/bash', script_path],
-                    stdin=subprocess.PIPE,
+                    ['/bin/bash', centralized_script, '--force', instance_name, environment],
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
-                    cwd=instance_path,
                     text=True
                 )
-                # Enviar confirmación
-                process.stdin.write('s\n')
-                process.stdin.close()
+                # No necesitamos enviar confirmación porque usamos --force
             
             return {
                 'success': True,

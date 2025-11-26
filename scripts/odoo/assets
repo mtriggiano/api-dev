@@ -1,0 +1,14 @@
+#!/bin/bash
+# Wrapper script para regenerar assets de Odoo
+# Este script busca y ejecuta regenerate-assets.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ASSETS_SCRIPT="$SCRIPT_DIR/regenerate-assets.sh"
+
+if [[ -f "$ASSETS_SCRIPT" ]]; then
+    exec "$ASSETS_SCRIPT" "$@"
+else
+    echo "❌ Error: Script regenerate-assets.sh no encontrado en $SCRIPT_DIR"
+    echo "   Ubicación esperada: $ASSETS_SCRIPT"
+    exit 1
+fi
