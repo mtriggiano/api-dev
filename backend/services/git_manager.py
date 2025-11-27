@@ -399,3 +399,86 @@ class GitManager:
                 'success': False,
                 'error': f'Error al obtener diff: {result.get("stderr")}'
             }
+    
+    def reset_branch_from_main(self, local_path: str, dev_branch: str, token: str = None) -> Dict:
+        """Hace un hard reset de la rama de desarrollo con los cambios de main
+        
+        Este método:
+        1. Hace fetch del remoto
+        2. Cambia a la rama de desarrollo
+        3. Hace un hard reset con origin/main
+        4. Fuerza el push de la rama actualizada
+        
+        ADVERTENCIA: Esto sobrescribe completamente la rama de desarrollo
+        """
+        if not os.path.exists(os.path.join(local_path, '.git')):
+            return {'success': False, 'error': 'No es un repositorio Git'}
+        
+        # Si hay token, configurar credential helper temporalmente
+        original_url = None
+        if token:
+            remote_result = self._run_git_command(['git', 'remote', 'get-url', 'origin'], local_path)
+            if remote_result['success'] and remote_result['stdout'].startswith('https://'):
+                original_url = remote_result['stdout']
+                auth_url = original_url.replace('https://', f'https://{token}@')
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', auth_url], local_path)
+        
+        try:
+            # 1. Hacer fetch para obtener los últimos cambios
+            fetch_result = self._run_git_command(['git', 'fetch', 'origin'], local_path)
+            if not fetch_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al hacer fetch: {fetch_result.get("stderr")}'
+                }
+            
+            # 2. Verificar que existe la rama main en el remoto
+            branch_check = self._run_git_command(['git', 'ls-remote', '--heads', 'origin', 'main'], local_path)
+            if not branch_check['success'] or not branch_check['stdout']:
+                return {
+                    'success': False,
+                    'error': 'La rama main no existe en el repositorio remoto'
+                }
+            
+            # 3. Cambiar a la rama de desarrollo (crearla si no existe)
+            checkout_result = self._run_git_command(['git', 'checkout', dev_branch], local_path)
+            if not checkout_result['success']:
+                # Si la rama no existe, crearla
+                create_result = self._run_git_command(['git', 'checkout', '-b', dev_branch], local_path)
+                if not create_result['success']:
+                    return {
+                        'success': False,
+                        'error': f'Error al crear/cambiar a rama {dev_branch}: {create_result.get("stderr")}'
+                    }
+            
+            # 4. Hacer hard reset con origin/main
+            reset_result = self._run_git_command(['git', 'reset', '--hard', 'origin/main'], local_path)
+            if not reset_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al hacer reset: {reset_result.get("stderr")}'
+                }
+            
+            # 5. Forzar push de la rama actualizada
+            push_result = self._run_git_command(['git', 'push', '--force-with-lease', 'origin', dev_branch], local_path)
+            if not push_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al hacer push: {push_result.get("stderr")}'
+                }
+            
+            return {
+                'success': True,
+                'message': f'Rama {dev_branch} actualizada exitosamente con los cambios de main',
+                'details': {
+                    'fetch': 'OK',
+                    'checkout': 'OK',
+                    'reset': 'OK',
+                    'push': 'OK'
+                }
+            }
+            
+        finally:
+            # Restaurar URL original si se modificó
+            if token and original_url:
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', original_url], local_path)

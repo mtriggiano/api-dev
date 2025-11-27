@@ -933,7 +933,8 @@ def get_deploy_logs(instance_name):
                 'test_webhook',
                 'git_pull',
                 'git_push',
-                'git_commit'
+                'git_commit',
+                'reset_from_main'
             ])
         ).order_by(ActionLog.timestamp.desc()).limit(limit).all()
         
@@ -950,4 +951,67 @@ def get_deploy_logs(instance_name):
         }), 200
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@github_bp.route('/reset-from-main/<instance_name>', methods=['POST'])
+@jwt_required()
+def reset_branch_from_main(instance_name):
+    """Hace un hard reset de la rama de desarrollo con los cambios de main
+    
+    ADVERTENCIA: Esto sobrescribe completamente la rama de desarrollo con main
+    Solo disponible para instancias de desarrollo
+    """
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    
+    if user.role not in ['admin', 'developer']:
+        return jsonify({'error': 'Permisos insuficientes'}), 403
+    
+    try:
+        config = GitHubConfig.query.filter_by(
+            instance_name=instance_name,
+            is_active=True
+        ).first()
+        
+        if not config:
+            return jsonify({'error': 'Configuración no encontrada'}), 404
+        
+        # Solo permitir en instancias de desarrollo
+        if config.instance_type != 'development' and not instance_name.startswith('dev-'):
+            return jsonify({
+                'error': 'Esta operación solo está disponible para instancias de desarrollo'
+            }), 400
+        
+        # Ejecutar reset desde main
+        result = git_manager.reset_branch_from_main(
+            config.local_path,
+            config.repo_branch,
+            config.github_access_token
+        )
+        
+        # Log de la acción
+        log_action(
+            user_id,
+            'reset_from_main',
+            instance_name,
+            f"Reset rama {config.repo_branch} desde main: {'exitoso' if result['success'] else 'fallido'}",
+            'success' if result['success'] else 'error'
+        )
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': f'Rama {config.repo_branch} actualizada exitosamente con los cambios de main',
+                'details': result.get('details', {}),
+                'warning': 'Todos los cambios locales han sido sobrescritos'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Error desconocido')
+            }), 500
+        
+    except Exception as e:
+        log_action(user_id, 'reset_from_main', instance_name, str(e), 'error')
         return jsonify({'error': str(e)}), 500

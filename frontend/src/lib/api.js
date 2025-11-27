@@ -215,6 +215,10 @@ export const github = {
   
   getDeployLogs: (instanceName, limit = 50) => 
     api.get(`/api/github/deploy-logs/${instanceName}?limit=${limit}`),
+
+  // Reset branch from main
+  resetFromMain: (instanceName) => 
+    api.post(`/api/github/reset-from-main/${instanceName}`),
 };
 
 export default api;

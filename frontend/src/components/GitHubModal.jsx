@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Trash2, Webhook, Copy, TestTube } from 'lucide-react';
+import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Trash2, Webhook, Copy, TestTube, GitBranch } from 'lucide-react';
 import { github } from '../lib/api';
 
 export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }) {
@@ -17,6 +17,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMainResetConfirm, setShowMainResetConfirm] = useState(false);
   
   // Webhook states
   const [showWebhookConfig, setShowWebhookConfig] = useState(false);
@@ -225,6 +226,28 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Error al resetear configuración');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetFromMain = async () => {
+    setLoading(true);
+    setError('');
+    setGitSuccess('');
+    
+    try {
+      const response = await github.resetFromMain(instanceName);
+      if (response.data.success) {
+        setGitSuccess(`Rama actualizada exitosamente desde main. ${response.data.warning || ''}`);
+        setShowMainResetConfirm(false);
+        // Recargar el estado de Git
+        loadGitStatus();
+      } else {
+        setError(response.data.error || 'Error al actualizar desde main');
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error al actualizar desde main');
     } finally {
       setLoading(false);
     }
@@ -512,6 +535,18 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 <Webhook className="w-4 h-4" />
                 {existingConfig?.has_webhook ? 'Configurar Webhook' : 'Habilitar Webhook'}
               </button>
+
+              {/* Botón Actualizar desde Main - Solo para desarrollo */}
+              {instanceName.startsWith('dev-') && (
+                <button
+                  onClick={() => setShowMainResetConfirm(true)}
+                  disabled={loading}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <GitBranch className="w-4 h-4" />
+                  Actualizar desde Main
+                </button>
+              )}
 
               <button
                 onClick={() => setShowResetConfirm(true)}
