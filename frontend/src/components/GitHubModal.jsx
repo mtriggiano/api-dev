@@ -1041,6 +1041,42 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
           </div>
         )}
 
+        {/* Modal de confirmación de Reset desde Main */}
+        {showMainResetConfirm && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-lg">
+                  <GitBranch className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  ¿Actualizar desde Main?
+                </h4>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                <strong>ADVERTENCIA:</strong> Esto sobrescribirá completamente la rama de desarrollo con los cambios de main. 
+                Todos los cambios locales se perderán permanentemente.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleResetFromMain}
+                  disabled={loading}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Actualizando...' : 'Actualizar'}
+                </button>
+                <button
+                  onClick={() => setShowMainResetConfirm(false)}
+                  disabled={loading}
+                  className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal de confirmación de Delete */}
         {showDeleteConfirm && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
