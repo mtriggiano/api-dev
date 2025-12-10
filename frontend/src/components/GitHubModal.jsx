@@ -18,6 +18,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMainResetConfirm, setShowMainResetConfirm] = useState(false);
+  const [showCurrentResetConfirm, setShowCurrentResetConfirm] = useState(false);
   
   // Webhook states
   const [showWebhookConfig, setShowWebhookConfig] = useState(false);
@@ -231,23 +232,25 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
     }
   };
 
-  const handleResetFromMain = async () => {
+  const handleResetHard = async (mode) => {
     setLoading(true);
     setError('');
     setGitSuccess('');
     
     try {
-      const response = await github.resetFromMain(instanceName);
+      const response = await github.resetHard(instanceName, mode);
       if (response.data.success) {
-        setGitSuccess(`Rama actualizada exitosamente desde main. ${response.data.warning || ''}`);
+        const target = mode === 'main' ? 'main' : existingConfig?.repo_branch || 'rama actual';
+        setGitSuccess(`Repositorio actualizado exitosamente desde ${target}`);
         setShowMainResetConfirm(false);
+        setShowCurrentResetConfirm(false);
         // Recargar el estado de Git
         loadGitStatus();
       } else {
-        setError(response.data.error || 'Error al actualizar desde main');
+        setError(response.data.error || 'Error al actualizar repositorio');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Error al actualizar desde main');
+      setError(err.response?.data?.error || 'Error al actualizar repositorio');
     } finally {
       setLoading(false);
     }
@@ -321,6 +324,8 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
     setExistingConfig(null);
     setShowResetConfirm(false);
     setShowDeleteConfirm(false);
+    setShowMainResetConfirm(false);
+    setShowCurrentResetConfirm(false);
     setShowWebhookConfig(false);
     setWebhookInfo(null);
     onClose();
@@ -536,16 +541,26 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 {existingConfig?.has_webhook ? 'Configurar Webhook' : 'Habilitar Webhook'}
               </button>
 
-              {/* Botón Actualizar desde Main - Solo para desarrollo */}
+              {/* Botones de Reset Hard - Solo para desarrollo */}
               {instanceName.startsWith('dev-') && (
-                <button
-                  onClick={() => setShowMainResetConfirm(true)}
-                  disabled={loading}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <GitBranch className="w-4 h-4" />
-                  Actualizar desde Main
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowMainResetConfirm(true)}
+                    disabled={loading}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <GitBranch className="w-4 h-4" />
+                    Actualizar desde Main
+                  </button>
+                  <button
+                    onClick={() => setShowCurrentResetConfirm(true)}
+                    disabled={loading}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Actualizar desde Rama Actual ({existingConfig?.repo_branch})
+                  </button>
+                </>
               )}
 
               <button
@@ -1059,7 +1074,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
               </p>
               <div className="flex gap-3">
                 <button
-                  onClick={handleResetFromMain}
+                  onClick={() => handleResetHard('main')}
                   disabled={loading}
                   className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
                 >
@@ -1067,6 +1082,42 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 </button>
                 <button
                   onClick={() => setShowMainResetConfirm(false)}
+                  disabled={loading}
+                  className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de confirmación de Reset desde Rama Actual */}
+        {showCurrentResetConfirm && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg">
+                  <RefreshCw className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  ¿Actualizar desde {existingConfig?.repo_branch}?
+                </h4>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                <strong>ADVERTENCIA:</strong> Esto sobrescribirá completamente tu código local con los cambios de la rama remota <strong>{existingConfig?.repo_branch}</strong>. 
+                Todos los cambios locales no guardados se perderán permanentemente.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleResetHard('current')}
+                  disabled={loading}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Actualizando...' : 'Actualizar'}
+                </button>
+                <button
+                  onClick={() => setShowCurrentResetConfirm(false)}
                   disabled={loading}
                   className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
                 >

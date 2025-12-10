@@ -423,6 +423,48 @@ class GitManager:
                 'error': f'Error al eliminar carpeta .git: {str(e)}'
             }
     
+    def force_reset_repo(self, local_path: str, target_branch: str, token: str = None) -> Dict:
+        """
+        Realiza un hard reset del repositorio local contra una rama remota específica.
+        Equivalente a: git fetch && git reset --hard origin/<target_branch>
+        """
+        if not os.path.exists(os.path.join(local_path, '.git')):
+            return {'success': False, 'error': 'No es un repositorio Git'}
+            
+        # Configurar auth si es necesario
+        original_url = None
+        if token:
+            remote_result = self._run_git_command(['git', 'remote', 'get-url', 'origin'], local_path)
+            if remote_result['success'] and remote_result['stdout'].startswith('https://'):
+                original_url = remote_result['stdout']
+                auth_url = original_url.replace('https://', f'https://{token}@')
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', auth_url], local_path)
+                
+        try:
+            # 1. Fetch de todo
+            fetch_result = self._run_git_command(['git', 'fetch', 'origin'], local_path)
+            if not fetch_result['success']:
+                return {'success': False, 'error': f'Error en fetch: {fetch_result.get("stderr")}'}
+                
+            # 2. Hard reset
+            reset_result = self._run_git_command(['git', 'reset', '--hard', f'origin/{target_branch}'], local_path)
+            
+            if reset_result['success']:
+                return {
+                    'success': True, 
+                    'message': f'Repositorio reseteado exitosamente a origin/{target_branch}',
+                    'output': reset_result['stdout']
+                }
+            else:
+                return {
+                    'success': False, 
+                    'error': f'Error en reset: {reset_result.get("stderr")}'
+                }
+                
+        finally:
+            if token and original_url:
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', original_url], local_path)
+
     def reset_branch_from_main(self, local_path: str, dev_branch: str, token: str = None) -> Dict:
         """Hace un hard reset de la rama de desarrollo con los cambios de main
         

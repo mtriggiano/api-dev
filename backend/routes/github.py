@@ -582,6 +582,50 @@ def pull():
         log_action(user_id, 'git_pull', data.get('instance_name'), str(e), 'error')
         return jsonify({'error': str(e)}), 500
 
+@github_bp.route('/reset-hard', methods=['POST'])
+@jwt_required()
+def reset_hard():
+    """Realiza un hard reset del repositorio local contra una rama remota"""
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    
+    if user.role not in ['admin', 'developer']:
+        return jsonify({'error': 'Permisos insuficientes'}), 403
+    
+    data = request.get_json()
+    if not data or not data.get('instance_name'):
+        return jsonify({'error': 'instance_name requerido'}), 400
+        
+    mode = data.get('mode', 'current') # 'current' o 'main'
+    
+    try:
+        config = GitHubConfig.query.filter_by(
+            user_id=user_id,
+            instance_name=data['instance_name'],
+            is_active=True
+        ).first()
+        
+        if not config:
+            return jsonify({'error': 'Configuración no encontrada'}), 404
+        
+        target_branch = 'main' if mode == 'main' else config.repo_branch
+        
+        result = git_manager.force_reset_repo(
+            config.local_path,
+            target_branch,
+            config.github_access_token
+        )
+        
+        if result['success']:
+            log_action(user_id, 'git_reset_hard', data['instance_name'], f"Reset hard a {target_branch}", 'success')
+            return jsonify(result), 200
+        else:
+            log_action(user_id, 'git_reset_hard', data['instance_name'], result.get('error'), 'error')
+            return jsonify(result), 400
+    except Exception as e:
+        log_action(user_id, 'git_reset_hard', data.get('instance_name'), str(e), 'error')
+        return jsonify({'error': str(e)}), 500
+
 @github_bp.route('/history/<instance_name>', methods=['GET'])
 @jwt_required()
 def get_history(instance_name):
