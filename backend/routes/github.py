@@ -222,6 +222,17 @@ def delete_config(instance_name):
         if not config:
             return jsonify({'error': 'Configuración no encontrada'}), 404
         
+        # Intentar eliminar la carpeta .git del sistema de archivos
+        if config.local_path:
+            try:
+                clean_result = git_manager.remove_git_repo(config.local_path)
+                if clean_result['success']:
+                    log_action(user_id, 'clean_git_repo', instance_name, 'Carpeta .git eliminada exitosamente', 'success')
+                else:
+                    log_action(user_id, 'clean_git_repo', instance_name, f"Error al limpiar .git: {clean_result.get('error')}", 'warning')
+            except Exception as e:
+                log_action(user_id, 'clean_git_repo', instance_name, f"Excepción al limpiar .git: {str(e)}", 'error')
+        
         config.is_active = False
         db.session.commit()
         

@@ -399,6 +399,29 @@ class GitManager:
                 'success': False,
                 'error': f'Error al obtener diff: {result.get("stderr")}'
             }
+
+    def remove_git_repo(self, local_path: str) -> Dict:
+        """Elimina la carpeta .git del directorio local"""
+        git_dir = os.path.join(local_path, '.git')
+        
+        if not os.path.exists(git_dir):
+            return {
+                'success': True,
+                'message': 'No se encontró carpeta .git, nada que eliminar'
+            }
+            
+        try:
+            import shutil
+            shutil.rmtree(git_dir)
+            return {
+                'success': True,
+                'message': 'Carpeta .git eliminada exitosamente'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Error al eliminar carpeta .git: {str(e)}'
+            }
     
     def reset_branch_from_main(self, local_path: str, dev_branch: str, token: str = None) -> Dict:
         """Hace un hard reset de la rama de desarrollo con los cambios de main
