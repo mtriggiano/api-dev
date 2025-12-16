@@ -850,11 +850,16 @@ def webhook_receiver(instance_name):
             db.session.commit()
         
         # Log de la acción
+        log_message = f"Deploy {'exitoso' if deploy_result['success'] else 'fallido'}"
+        if not deploy_result['success']:
+             log_message += f": {deploy_result.get('error', 'Error desconocido')}"
+        log_message += f" (Commit: {commit_info.get('last_commit', {}).get('message', 'N/A')})"
+
         log_action(
             config.user_id,
             'webhook_autodeploy',
             instance_name,
-            f"Deploy {'exitoso' if deploy_result['success'] else 'fallido'}: {commit_info.get('last_commit', {}).get('message', 'N/A')}",
+            log_message,
             'success' if deploy_result['success'] else 'error'
         )
         

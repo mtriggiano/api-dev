@@ -181,7 +181,7 @@ class DeployManager:
             if not pull_result['success']:
                 return {
                     **results,
-                    'error': 'Error en git pull',
+                    'error': pull_result.get('error', 'Error en git pull'),
                     'success': False
                 }
             
@@ -194,7 +194,7 @@ class DeployManager:
                 if not update_result['success']:
                     return {
                         **results,
-                        'error': 'Error al actualizar módulos',
+                        'error': update_result.get('error', 'Error al actualizar módulos'),
                         'success': False
                     }
             

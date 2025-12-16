@@ -217,6 +217,8 @@ export const github = {
     api.get(`/api/github/deploy-logs/${instanceName}?limit=${limit}`),
 
   // Reset branch from main
+  resetHard: (instanceName, mode) => 
+    api.post("/api/github/reset-hard", { instance_name: instanceName, mode }),
   resetFromMain: (instanceName) => 
     api.post(`/api/github/reset-from-main/${instanceName}`),
 };
