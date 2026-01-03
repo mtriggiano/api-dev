@@ -585,7 +585,15 @@ def pull():
 @github_bp.route('/reset-hard', methods=['POST'])
 @jwt_required()
 def reset_hard():
-    """Realiza un hard reset del repositorio local contra una rama remota"""
+    """
+    Actualiza el repositorio local desde una rama remota.
+    
+    Para instancias de desarrollo (dev-*) actualizando desde main:
+    - Usa REBASE para mantener historial compatible y permitir merges futuros
+    
+    Para otros casos:
+    - Usa RESET HARD (sobrescribe completamente)
+    """
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
     
@@ -597,11 +605,12 @@ def reset_hard():
         return jsonify({'error': 'instance_name requerido'}), 400
         
     mode = data.get('mode', 'current') # 'current' o 'main'
+    instance_name = data['instance_name']
     
     try:
         config = GitHubConfig.query.filter_by(
             user_id=user_id,
-            instance_name=data['instance_name'],
+            instance_name=instance_name,
             is_active=True
         ).first()
         
@@ -610,20 +619,36 @@ def reset_hard():
         
         target_branch = 'main' if mode == 'main' else config.repo_branch
         
-        result = git_manager.force_reset_repo(
-            config.local_path,
-            target_branch,
-            config.github_access_token
-        )
+        # Decidir estrategia: REBASE para dev actualizando desde main, RESET para otros casos
+        is_dev_instance = instance_name.startswith('dev-')
+        updating_from_main = mode == 'main'
+        use_rebase = is_dev_instance and updating_from_main
+        
+        if use_rebase:
+            # Usar rebase para mantener historial compatible
+            result = git_manager.rebase_from_main(
+                config.local_path,
+                config.repo_branch,
+                config.github_access_token
+            )
+            action_msg = f"Rebase desde main a {config.repo_branch}"
+        else:
+            # Usar reset hard tradicional
+            result = git_manager.force_reset_repo(
+                config.local_path,
+                target_branch,
+                config.github_access_token
+            )
+            action_msg = f"Reset hard a {target_branch}"
         
         if result['success']:
-            log_action(user_id, 'git_reset_hard', data['instance_name'], f"Reset hard a {target_branch}", 'success')
+            log_action(user_id, 'git_update', instance_name, action_msg, 'success')
             return jsonify(result), 200
         else:
-            log_action(user_id, 'git_reset_hard', data['instance_name'], result.get('error'), 'error')
+            log_action(user_id, 'git_update', instance_name, result.get('error'), 'error')
             return jsonify(result), 400
     except Exception as e:
-        log_action(user_id, 'git_reset_hard', data.get('instance_name'), str(e), 'error')
+        log_action(user_id, 'git_update', instance_name, str(e), 'error')
         return jsonify({'error': str(e)}), 500
 
 @github_bp.route('/history/<instance_name>', methods=['GET'])

@@ -465,6 +465,89 @@ class GitManager:
             if token and original_url:
                 self._run_git_command(['git', 'remote', 'set-url', 'origin', original_url], local_path)
 
+    def rebase_from_main(self, local_path: str, target_branch: str, token: str = None) -> Dict:
+        """
+        Hace rebase de la rama actual sobre main, manteniendo el historial compatible.
+        
+        Este método:
+        1. Hace fetch del remoto
+        2. Verifica que no haya cambios sin commitear
+        3. Hace rebase de la rama actual sobre origin/main
+        4. Hace push con force-with-lease
+        
+        VENTAJA: Mantiene un historial lineal y compatible para merges futuros
+        """
+        if not os.path.exists(os.path.join(local_path, '.git')):
+            return {'success': False, 'error': 'No es un repositorio Git'}
+        
+        # Configurar auth si es necesario
+        original_url = None
+        if token:
+            remote_result = self._run_git_command(['git', 'remote', 'get-url', 'origin'], local_path)
+            if remote_result['success'] and remote_result['stdout'].startswith('https://'):
+                original_url = remote_result['stdout']
+                auth_url = original_url.replace('https://', f'https://{token}@')
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', auth_url], local_path)
+        
+        try:
+            # 1. Verificar que no haya cambios sin commitear
+            status_result = self._run_git_command(['git', 'status', '--porcelain'], local_path)
+            if status_result['success'] and status_result['stdout']:
+                return {
+                    'success': False,
+                    'error': 'Hay cambios sin commitear. Por favor, haz commit o descarta los cambios antes de actualizar.'
+                }
+            
+            # 2. Hacer fetch para obtener los últimos cambios
+            fetch_result = self._run_git_command(['git', 'fetch', 'origin'], local_path)
+            if not fetch_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al hacer fetch: {fetch_result.get("stderr")}'
+                }
+            
+            # 3. Verificar que existe la rama main en el remoto
+            branch_check = self._run_git_command(['git', 'ls-remote', '--heads', 'origin', 'main'], local_path)
+            if not branch_check['success'] or not branch_check['stdout']:
+                return {
+                    'success': False,
+                    'error': 'La rama main no existe en el repositorio remoto'
+                }
+            
+            # 4. Hacer rebase sobre origin/main
+            rebase_result = self._run_git_command(['git', 'rebase', 'origin/main'], local_path)
+            if not rebase_result['success']:
+                # Si hay conflictos, abortar el rebase
+                self._run_git_command(['git', 'rebase', '--abort'], local_path)
+                return {
+                    'success': False,
+                    'error': f'Error al hacer rebase (posibles conflictos): {rebase_result.get("stderr")}. Rebase abortado.'
+                }
+            
+            # 5. Hacer push con force-with-lease (más seguro que --force)
+            push_result = self._run_git_command(['git', 'push', '--force-with-lease', 'origin', target_branch], local_path)
+            if not push_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al hacer push: {push_result.get("stderr")}'
+                }
+            
+            return {
+                'success': True,
+                'message': f'Rama {target_branch} actualizada exitosamente desde main (rebase)',
+                'details': {
+                    'method': 'rebase',
+                    'fetch': 'OK',
+                    'rebase': 'OK',
+                    'push': 'OK'
+                }
+            }
+            
+        finally:
+            # Restaurar URL original si se modificó
+            if token and original_url:
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', original_url], local_path)
+
     def reset_branch_from_main(self, local_path: str, dev_branch: str, token: str = None) -> Dict:
         """Hace un hard reset de la rama de desarrollo con los cambios de main
         
@@ -475,6 +558,7 @@ class GitManager:
         4. Fuerza el push de la rama actualizada
         
         ADVERTENCIA: Esto sobrescribe completamente la rama de desarrollo
+        NOTA: Este método rompe el historial. Usar rebase_from_main para mantener compatibilidad.
         """
         if not os.path.exists(os.path.join(local_path, '.git')):
             return {'success': False, 'error': 'No es un repositorio Git'}

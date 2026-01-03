@@ -1069,8 +1069,10 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 </h4>
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                <strong>ADVERTENCIA:</strong> Esto sobrescribirá completamente la rama de desarrollo con los cambios de main. 
-                Todos los cambios locales se perderán permanentemente.
+                Esto actualizará tu rama de desarrollo con los últimos cambios de <strong>main</strong> usando rebase.
+                <br/><br/>
+                <strong>Importante:</strong> Asegúrate de haber hecho commit de todos tus cambios antes de continuar.
+                El rebase mantiene el historial compatible para futuros merges.
               </p>
               <div className="flex gap-3">
                 <button
