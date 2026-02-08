@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Trash2, Webhook, Copy, TestTube, GitBranch } from 'lucide-react';
+import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Trash2, Webhook, Copy, TestTube, GitBranch, Info } from 'lucide-react';
 import { github } from '../lib/api';
 
 export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }) {
@@ -17,8 +17,14 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
   const [showInstructions, setShowInstructions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showMainResetConfirm, setShowMainResetConfirm] = useState(false);
-  const [showCurrentResetConfirm, setShowCurrentResetConfirm] = useState(false);
+  
+  // Branch selection states
+  const [availableBranches, setAvailableBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [showBranchSelector, setShowBranchSelector] = useState(false);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [showResetHardConfirm, setShowResetHardConfirm] = useState(false);
+  const [resetHardBranch, setResetHardBranch] = useState('');
   
   // Webhook states
   const [showWebhookConfig, setShowWebhookConfig] = useState(false);
@@ -43,6 +49,10 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
         setExistingConfig(response.data.config);
         setStep('git-actions');
         loadGitStatus();
+        // Load available branches for development instances
+        if (instanceName.startsWith('dev-')) {
+          loadAvailableBranches();
+        }
       }
     } catch (error) {
       // No hay configuración existente, continuar normal
@@ -58,6 +68,65 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
       }
     } catch (error) {
       console.error('Error loading git status:', error);
+    }
+  };
+
+  const loadAvailableBranches = async () => {
+    setBranchesLoading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      console.log('Loading branches for:', instanceName);
+      console.log('Token exists:', !!token);
+      
+      const response = await fetch(`/api/github/branches/${instanceName}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Branches response:', data);
+      
+      if (response.ok && data.success) {
+        setAvailableBranches(data.branches || []);
+        // Set default selected branch to current branch or main
+        const currentBranch = data.current_branch;
+        if (currentBranch && data.branches.includes(currentBranch)) {
+          setSelectedBranch(currentBranch);
+        } else if (data.branches.includes('main')) {
+          setSelectedBranch('main');
+        } else if (data.branches.length > 0) {
+          setSelectedBranch(data.branches[0]);
+        }
+        
+        // Show success message
+        setGitSuccess(`✅ ${data.branches?.length || 0} ramas encontradas: ${data.branches?.join(', ') || 'ninguna'}`);
+      } else {
+        // Handle specific error cases
+        if (response.status === 401) {
+          setError('Error de autenticación. Por favor, verifica tu configuración de GitHub.');
+        } else if (response.status === 404) {
+          setError('Configuración de GitHub no encontrada para esta instancia.');
+        } else {
+          setError(`Error al cargar ramas: ${data.error || 'Error desconocido'}`);
+        }
+        
+        // Set some default branches for testing
+        setAvailableBranches(['main', 'develop', instanceName]);
+        setSelectedBranch('main');
+      }
+    } catch (err) {
+      console.error('Error loading branches:', err);
+      setError(`Error de conexión: ${err.message}`);
+      
+      // Set some default branches for testing
+      setAvailableBranches(['main', 'develop', instanceName]);
+      setSelectedBranch('main');
+    } finally {
+      setBranchesLoading(false);
     }
   };
 
@@ -107,21 +176,61 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
     }
   };
 
-  const handlePull = async () => {
+  const handlePull = async (branchName = null, force = false, resetHard = false) => {
     setGitLoading(true);
     setError('');
     setGitSuccess('');
 
     try {
-      const response = await github.pull(instanceName);
-      if (response.data.success) {
-        setGitSuccess('Pull realizado exitosamente');
+      const pullData = { instance_name: instanceName };
+      if (branchName) {
+        pullData.branch = branchName;
+      }
+      if (force) {
+        pullData.force = true;
+      }
+      if (resetHard) {
+        pullData.reset_hard = true;
+      }
+      
+      const token = localStorage.getItem('access_token');
+      const response = await fetch('/api/github/pull', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(pullData)
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        const branch = branchName || existingConfig?.repo_branch || 'rama actual';
+        let successMessage;
+        if (resetHard) {
+          successMessage = `🔄 Rama sobrescrita exitosamente con ${branch}`;
+        } else {
+          successMessage = `Pull realizado exitosamente desde ${branch}`;
+        }
+        if (data.warning) {
+          successMessage += `\n⚠️ ${data.warning}`;
+        }
+        setGitSuccess(successMessage);
         loadGitStatus();
+        // Recargar ramas para actualizar estado
+        if (instanceName.startsWith('dev-')) {
+          loadAvailableBranches();
+        }
       } else {
-        setError(response.data.error || 'Error al hacer pull');
+        // Manejar errores específicos de seguridad
+        if (data.suggested_action === 'commit_first') {
+          setError(`${data.error}\n\n💡 ${data.warning}\n\nArchivos modificados: ${data.changes_info?.total || 0}`);
+        } else {
+          setError(data.error || 'Error al hacer pull');
+        }
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Error al hacer pull');
+      setError(err.message || 'Error al hacer pull');
     } finally {
       setGitLoading(false);
     }
@@ -242,8 +351,6 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
       if (response.data.success) {
         const target = mode === 'main' ? 'main' : existingConfig?.repo_branch || 'rama actual';
         setGitSuccess(`Repositorio actualizado exitosamente desde ${target}`);
-        setShowMainResetConfirm(false);
-        setShowCurrentResetConfirm(false);
         // Recargar el estado de Git
         loadGitStatus();
       } else {
@@ -324,8 +431,6 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
     setExistingConfig(null);
     setShowResetConfirm(false);
     setShowDeleteConfirm(false);
-    setShowMainResetConfirm(false);
-    setShowCurrentResetConfirm(false);
     setShowWebhookConfig(false);
     setWebhookInfo(null);
     onClose();
@@ -517,7 +622,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 )}
               </button>
               <button
-                onClick={handlePull}
+                onClick={() => handlePull()}
                 disabled={gitLoading}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
@@ -541,26 +646,88 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 {existingConfig?.has_webhook ? 'Configurar Webhook' : 'Habilitar Webhook'}
               </button>
 
-              {/* Botones de Reset Hard - Solo para desarrollo */}
+              {/* Gestión de Ramas - Solo para desarrollo */}
               {instanceName.startsWith('dev-') && (
-                <>
+                <div className="space-y-2">
                   <button
-                    onClick={() => setShowMainResetConfirm(true)}
+                    onClick={() => {
+                      setShowBranchSelector(!showBranchSelector);
+                      if (!showBranchSelector && availableBranches.length === 0) {
+                        loadAvailableBranches();
+                      }
+                    }}
                     disabled={loading}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-between"
                   >
-                    <GitBranch className="w-4 h-4" />
-                    Actualizar desde Main
+                    <span className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4" />
+                      Gestión de Ramas
+                    </span>
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showBranchSelector ? 'rotate-180' : ''}`} />
                   </button>
-                  <button
-                    onClick={() => setShowCurrentResetConfirm(true)}
-                    disabled={loading}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Actualizar desde Rama Actual ({existingConfig?.repo_branch})
-                  </button>
-                </>
+
+                  {showBranchSelector && (
+                    <div className="bg-gray-800/50 rounded-lg border border-gray-700 overflow-hidden">
+                      {/* Selector de rama */}
+                      <div className="p-3 border-b border-gray-700">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Rama destino</span>
+                          <button
+                            onClick={loadAvailableBranches}
+                            disabled={branchesLoading}
+                            className="text-gray-400 hover:text-white transition-colors"
+                            title="Recargar ramas del repositorio"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${branchesLoading ? 'animate-spin' : ''}`} />
+                          </button>
+                        </div>
+                        <select
+                          value={selectedBranch}
+                          onChange={(e) => setSelectedBranch(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        >
+                          {availableBranches.length > 0 ? (
+                            availableBranches.map(branch => (
+                              <option key={branch} value={branch}>{branch}</option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="main">main</option>
+                              <option value={instanceName}>{instanceName}</option>
+                            </>
+                          )}
+                        </select>
+                        {branchesLoading && (
+                          <div className="text-xs text-blue-400 mt-1 flex items-center gap-1">
+                            <Loader className="w-3 h-3 animate-spin" /> Cargando ramas...
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Acciones */}
+                      <div className="p-3 flex gap-2">
+                        <button
+                          onClick={() => handlePull(selectedBranch)}
+                          disabled={gitLoading || !selectedBranch}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          Merge desde {selectedBranch ? selectedBranch.replace('origin/', '') : '...'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setResetHardBranch(selectedBranch || instanceName);
+                            setShowResetHardConfirm(true);
+                          }}
+                          disabled={gitLoading || !selectedBranch}
+                          className="bg-red-700/80 hover:bg-red-600 text-white px-3 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-red-600/50"
+                          title="Descarta TODOS tus cambios locales y deja tu código idéntico a la rama seleccionada"
+                        >
+                          Reset Hard
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               <button
@@ -1056,75 +1223,80 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
           </div>
         )}
 
-        {/* Modal de confirmación de Reset desde Main */}
-        {showMainResetConfirm && (
+        {/* Modal de confirmación de Reset Hard */}
+        {showResetHardConfirm && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm mx-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-4">
               <div className="flex items-center gap-3 mb-4">
-                <div className="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-lg">
-                  <GitBranch className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                <div className="bg-red-100 dark:bg-red-900/30 p-2 rounded-lg">
+                  <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
                 </div>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  ¿Actualizar desde Main?
+                  ⚠️ RESET HARD - ¡PELIGRO!
                 </h4>
               </div>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                Esto actualizará tu rama de desarrollo con los últimos cambios de <strong>main</strong> usando rebase.
-                <br/><br/>
-                <strong>Importante:</strong> Asegúrate de haber hecho commit de todos tus cambios antes de continuar.
-                El rebase mantiene el historial compatible para futuros merges.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleResetHard('main')}
-                  disabled={loading}
-                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {loading ? 'Actualizando...' : 'Actualizar'}
-                </button>
-                <button
-                  onClick={() => setShowMainResetConfirm(false)}
-                  disabled={loading}
-                  className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal de confirmación de Reset desde Rama Actual */}
-        {showCurrentResetConfirm && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm mx-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg">
-                  <RefreshCw className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              <div className="space-y-3 mb-6">
+                <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                  🚨 ESTA ACCIÓN ES IRREVERSIBLE
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Vas a <strong>SOBRESCRIBIR COMPLETAMENTE</strong> tu rama actual con <strong>{resetHardBranch}</strong>.
+                </p>
+                <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800">
+                  <p className="text-sm text-red-800 dark:text-red-200 font-medium mb-2">
+                    ❌ SE PERDERÁN PERMANENTEMENTE:
+                  </p>
+                  <ul className="text-xs text-red-700 dark:text-red-300 space-y-1">
+                    <li>• Todos los cambios no commiteados</li>
+                    <li>• Todos los commits locales no pusheados</li>
+                    <li>• Todo el trabajo no guardado</li>
+                  </ul>
                 </div>
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  ¿Actualizar desde {existingConfig?.repo_branch}?
-                </h4>
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Tu rama quedará <strong>exactamente igual</strong> a {resetHardBranch}. 
+                  Solo usa esto si realmente quieres descartar todo tu trabajo local.
+                </p>
               </div>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                <strong>ADVERTENCIA:</strong> Esto sobrescribirá completamente tu código local con los cambios de la rama remota <strong>{existingConfig?.repo_branch}</strong>. 
-                Todos los cambios locales no guardados se perderán permanentemente.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleResetHard('current')}
-                  disabled={loading}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {loading ? 'Actualizando...' : 'Actualizar'}
-                </button>
-                <button
-                  onClick={() => setShowCurrentResetConfirm(false)}
-                  disabled={loading}
-                  className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
+              
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-800">
+                  <input
+                    type="checkbox"
+                    id="confirmReset"
+                    className="rounded"
+                    onChange={(e) => {
+                      const button = document.getElementById('resetHardButton');
+                      button.disabled = !e.target.checked;
+                    }}
+                  />
+                  <label htmlFor="confirmReset" className="text-sm text-yellow-800 dark:text-yellow-200">
+                    Entiendo que perderé TODOS mis cambios locales
+                  </label>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button
+                    id="resetHardButton"
+                    onClick={() => {
+                      handlePull(resetHardBranch, false, true);
+                      setShowResetHardConfirm(false);
+                    }}
+                    disabled={true}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {gitLoading ? 'Sobrescribiendo...' : '🔄 SOBRESCRIBIR RAMA'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowResetHardConfirm(false);
+                      setResetHardBranch('');
+                    }}
+                    disabled={gitLoading}
+                    className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
           </div>

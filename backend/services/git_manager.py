@@ -326,11 +326,11 @@ class GitManager:
                 auth_url = original_url.replace('https://', f'https://{token}@')
                 self._run_git_command(['git', 'remote', 'set-url', 'origin', auth_url], local_path)
         
-        # Pull
+        # Pull con merge (no rebase) para reconciliar ramas divergentes
         if branch:
-            pull_result = self._run_git_command(['git', 'pull', 'origin', branch], local_path)
+            pull_result = self._run_git_command(['git', 'pull', '--no-rebase', 'origin', branch], local_path)
         else:
-            pull_result = self._run_git_command(['git', 'pull'], local_path)
+            pull_result = self._run_git_command(['git', 'pull', '--no-rebase'], local_path)
         
         # Restaurar URL original si se modificó
         if token and original_url:
@@ -423,6 +423,150 @@ class GitManager:
                 'error': f'Error al eliminar carpeta .git: {str(e)}'
             }
     
+    def check_working_directory_clean(self, local_path: str) -> Dict:
+        """Verifica si el directorio de trabajo está limpio (sin cambios no commiteados)"""
+        if not os.path.exists(os.path.join(local_path, '.git')):
+            return {'success': False, 'error': 'No es un repositorio Git'}
+        
+        # Verificar estado del repositorio
+        status_result = self._run_git_command(['git', 'status', '--porcelain'], local_path)
+        if not status_result['success']:
+            return {
+                'success': False,
+                'error': f'Error al verificar estado: {status_result.get("stderr")}'
+            }
+        
+        # Si hay output, significa que hay cambios
+        has_changes = bool(status_result['stdout'].strip())
+        
+        # Obtener información detallada si hay cambios
+        changes_info = {}
+        if has_changes:
+            # Contar tipos de cambios
+            lines = status_result['stdout'].strip().split('\n')
+            modified = sum(1 for line in lines if line.startswith(' M') or line.startswith('M '))
+            added = sum(1 for line in lines if line.startswith('A ') or line.startswith(' A'))
+            deleted = sum(1 for line in lines if line.startswith(' D') or line.startswith('D '))
+            untracked = sum(1 for line in lines if line.startswith('??'))
+            
+            changes_info = {
+                'modified': modified,
+                'added': added,
+                'deleted': deleted,
+                'untracked': untracked,
+                'total': len(lines)
+            }
+        
+        # Verificar commits no pusheados
+        unpushed_commits = 0
+        ahead_result = self._run_git_command(['git', 'rev-list', '--count', '@{upstream}..HEAD'], local_path)
+        if ahead_result['success'] and ahead_result['stdout'].strip().isdigit():
+            unpushed_commits = int(ahead_result['stdout'].strip())
+        
+        return {
+            'success': True,
+            'is_clean': not has_changes,
+            'has_uncommitted_changes': has_changes,
+            'has_unpushed_commits': unpushed_commits > 0,
+            'unpushed_commits_count': unpushed_commits,
+            'changes_info': changes_info
+        }
+
+    def safe_pull_from_branch(self, local_path: str, source_branch: str, token: str = None) -> Dict:
+        """Hace pull seguro desde una rama, verificando primero el estado del repositorio"""
+        # Verificar estado del directorio
+        clean_check = self.check_working_directory_clean(local_path)
+        if not clean_check['success']:
+            return clean_check
+        
+        # Si hay cambios no commiteados, advertir pero permitir continuar con merge
+        if clean_check['has_uncommitted_changes']:
+            return {
+                'success': False,
+                'error': 'Tienes cambios no commiteados',
+                'warning': 'Haz commit de tus cambios antes de actualizar desde otra rama',
+                'changes_info': clean_check['changes_info'],
+                'suggested_action': 'commit_first'
+            }
+        
+        # Si hay commits no pusheados, advertir
+        warning_message = None
+        if clean_check['has_unpushed_commits']:
+            warning_message = f"Tienes {clean_check['unpushed_commits_count']} commits no pusheados. Considera hacer push primero."
+        
+        # Proceder con pull normal
+        result = self.pull_changes(local_path, source_branch, token)
+        
+        # Agregar información de advertencia si existe
+        if warning_message and result['success']:
+            result['warning'] = warning_message
+        
+        return result
+
+    def get_remote_branches(self, local_path: str, token: str = None) -> Dict:
+        """Obtiene las ramas disponibles del repositorio remoto"""
+        if not os.path.exists(os.path.join(local_path, '.git')):
+            return {'success': False, 'error': 'No es un repositorio Git'}
+        
+        # Si hay token, configurar credential helper temporalmente
+        original_url = None
+        if token:
+            remote_result = self._run_git_command(['git', 'remote', 'get-url', 'origin'], local_path)
+            if remote_result['success'] and remote_result['stdout'].startswith('https://'):
+                original_url = remote_result['stdout']
+                auth_url = original_url.replace('https://', f'https://{token}@')
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', auth_url], local_path)
+        
+        try:
+            # Hacer fetch para obtener las ramas más recientes
+            fetch_result = self._run_git_command(['git', 'fetch', 'origin'], local_path)
+            if not fetch_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al hacer fetch: {fetch_result.get("stderr")}'
+                }
+            
+            # Obtener ramas remotas
+            branches_result = self._run_git_command(['git', 'branch', '-r'], local_path)
+            if not branches_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Error al obtener ramas: {branches_result.get("stderr")}'
+                }
+            
+            # Procesar output de ramas
+            branches_output = branches_result['stdout']
+            remote_branches = []
+            
+            for line in branches_output.split('\n'):
+                line = line.strip()
+                if line and not line.startswith('origin/HEAD'):
+                    # Remover 'origin/' del nombre de la rama
+                    if line.startswith('origin/'):
+                        branch_name = line[7:]  # Remover 'origin/'
+                        remote_branches.append(branch_name)
+            
+            # Obtener rama actual
+            current_branch_result = self._run_git_command(['git', 'branch', '--show-current'], local_path)
+            current_branch = current_branch_result['stdout'].strip() if current_branch_result['success'] else None
+            
+            # Verificar estado del repositorio
+            clean_check = self.check_working_directory_clean(local_path)
+            repo_status = clean_check if clean_check['success'] else {}
+            
+            return {
+                'success': True,
+                'branches': remote_branches,
+                'current_branch': current_branch,
+                'total': len(remote_branches),
+                'repo_status': repo_status
+            }
+            
+        finally:
+            # Restaurar URL original si se modificó
+            if token and original_url:
+                self._run_git_command(['git', 'remote', 'set-url', 'origin', original_url], local_path)
+
     def force_reset_repo(self, local_path: str, target_branch: str, token: str = None) -> Dict:
         """
         Realiza un hard reset del repositorio local contra una rama remota específica.

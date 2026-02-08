@@ -566,20 +566,73 @@ def pull():
         if not config:
             return jsonify({'error': 'Configuración no encontrada'}), 404
         
-        result = git_manager.pull_changes(
-            config.local_path,
-            config.repo_branch,
-            config.github_access_token
-        )
+        # Permitir especificar rama específica o usar la configurada
+        target_branch = data.get('branch', config.repo_branch)
+        force_pull = data.get('force', False)
+        reset_hard = data.get('reset_hard', False)
+        
+        # Si es reset hard, usar force_reset_repo
+        if reset_hard:
+            result = git_manager.force_reset_repo(
+                config.local_path,
+                target_branch,
+                config.github_access_token
+            )
+        # Si es pull forzado o desde la misma rama, usar pull normal
+        elif force_pull or target_branch == config.repo_branch:
+            result = git_manager.pull_changes(
+                config.local_path,
+                target_branch,
+                config.github_access_token
+            )
+        else:
+            # Si es desde otra rama, usar pull seguro
+            result = git_manager.safe_pull_from_branch(
+                config.local_path,
+                target_branch,
+                config.github_access_token
+            )
         
         if result['success']:
-            log_action(user_id, 'git_pull', data['instance_name'], 'Pull exitoso', 'success')
+            log_action(user_id, 'git_pull', data['instance_name'], f'Pull exitoso desde {target_branch}', 'success')
             return jsonify(result), 200
         else:
             log_action(user_id, 'git_pull', data['instance_name'], result.get('error'), 'error')
             return jsonify(result), 400
     except Exception as e:
         log_action(user_id, 'git_pull', data.get('instance_name'), str(e), 'error')
+        return jsonify({'error': str(e)}), 500
+
+@github_bp.route('/branches/<instance_name>', methods=['GET'])
+@jwt_required()
+def get_branches(instance_name):
+    """Obtiene las ramas disponibles del repositorio remoto"""
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    
+    if user.role not in ['admin', 'developer']:
+        return jsonify({'error': 'Permisos insuficientes'}), 403
+    
+    try:
+        config = GitHubConfig.query.filter_by(
+            user_id=user_id,
+            instance_name=instance_name,
+            is_active=True
+        ).first()
+        
+        if not config:
+            return jsonify({'error': 'Configuración no encontrada'}), 404
+        
+        result = git_manager.get_remote_branches(
+            config.local_path,
+            config.github_access_token
+        )
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @github_bp.route('/reset-hard', methods=['POST'])
@@ -985,7 +1038,8 @@ def get_current_commit(instance_name):
                     'short_hash': current_commit['hash'][:7],
                     'message': current_commit['message'],
                     'author': current_commit['author'],
-                    'date': current_commit['date'],
+                    'email': current_commit.get('email', ''),
+                    'timestamp': current_commit['timestamp'],
                     'branch': config.repo_branch
                 },
                 'last_deploy': config.last_deploy_at.isoformat() if config.last_deploy_at else None
