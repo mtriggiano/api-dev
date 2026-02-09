@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Trash2, Webhook, Copy, TestTube, GitBranch, Info } from 'lucide-react';
+import { Github, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown, ChevronUp, ExternalLink, RefreshCw, Trash2, Webhook, Copy, TestTube, GitBranch, Info, Terminal, Clock } from 'lucide-react';
 import { github } from '../lib/api';
 
 export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }) {
@@ -25,6 +25,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [showResetHardConfirm, setShowResetHardConfirm] = useState(false);
   const [resetHardBranch, setResetHardBranch] = useState('');
+  const [resetHardConfirmed, setResetHardConfirmed] = useState(false);
   
   // Webhook states
   const [showWebhookConfig, setShowWebhookConfig] = useState(false);
@@ -35,6 +36,11 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
   const [webhookInfo, setWebhookInfo] = useState(null);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
+
+  // Deploy logs states
+  const [showDeployLogs, setShowDeployLogs] = useState(false);
+  const [deployLogs, setDeployLogs] = useState([]);
+  const [deployLogsLoading, setDeployLogsLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen && instanceName) {
@@ -484,6 +490,20 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
     }
   };
 
+  const loadDeployLogs = async () => {
+    setDeployLogsLoading(true);
+    try {
+      const response = await github.getDeployLogs(instanceName, 50);
+      if (response.data.success) {
+        setDeployLogs(response.data.logs || []);
+      }
+    } catch (err) {
+      console.error('Error loading deploy logs:', err);
+    } finally {
+      setDeployLogsLoading(false);
+    }
+  };
+
   const copyToClipboard = (text, type) => {
     navigator.clipboard.writeText(text);
     if (type === 'url') {
@@ -499,7 +519,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-gray-900 dark:bg-gray-700 p-2 rounded-lg">
@@ -869,6 +889,107 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                 </div>
               </div>
             )}
+
+            {/* Historial de Deploy/Git */}
+            <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+              <button
+                onClick={() => {
+                  setShowDeployLogs(!showDeployLogs);
+                  if (!showDeployLogs && deployLogs.length === 0) loadDeployLogs();
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Historial de Actividad Git
+                  </span>
+                </div>
+                {showDeployLogs ? (
+                  <ChevronUp className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                )}
+              </button>
+
+              {showDeployLogs && (
+                <div className="bg-gray-950 border-t border-gray-700">
+                  {/* Toolbar */}
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
+                    <span className="text-xs text-gray-500">{deployLogs.length} registros</span>
+                    <button
+                      onClick={loadDeployLogs}
+                      disabled={deployLogsLoading}
+                      className="text-gray-400 hover:text-white p-1 rounded transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${deployLogsLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+
+                  {/* Log entries */}
+                  <div className="max-h-64 overflow-y-auto font-mono text-xs">
+                    {deployLogsLoading && deployLogs.length === 0 ? (
+                      <div className="flex items-center justify-center py-8 text-gray-500">
+                        <Loader className="w-4 h-4 animate-spin mr-2" />
+                        Cargando...
+                      </div>
+                    ) : deployLogs.length === 0 ? (
+                      <div className="text-center py-8 text-gray-600">
+                        No hay registros de actividad
+                      </div>
+                    ) : (
+                      deployLogs.map((log, idx) => {
+                        const isError = log.status === 'error';
+                        const isWebhook = log.action.includes('webhook');
+                        const isPull = log.action.includes('pull');
+                        const isPush = log.action.includes('push');
+                        const isCommit = log.action.includes('commit');
+                        const isReset = log.action.includes('reset');
+
+                        const actionLabel = isWebhook ? 'WEBHOOK' :
+                          isPull ? 'PULL' : isPush ? 'PUSH' :
+                          isCommit ? 'COMMIT' : isReset ? 'RESET' : log.action.toUpperCase();
+
+                        const actionColor = isError
+                          ? 'bg-red-600 text-red-100'
+                          : isWebhook ? 'bg-purple-600 text-purple-100'
+                          : isPull ? 'bg-blue-600 text-blue-100'
+                          : isPush ? 'bg-green-600 text-green-100'
+                          : isCommit ? 'bg-cyan-600 text-cyan-100'
+                          : isReset ? 'bg-orange-600 text-orange-100'
+                          : 'bg-gray-600 text-gray-100';
+
+                        const rowBg = isError ? 'bg-red-900/20' : 'bg-transparent';
+
+                        return (
+                          <div
+                            key={log.id || idx}
+                            className={`${rowBg} px-3 py-1.5 border-b border-gray-800/50 hover:bg-gray-800/50 flex items-start gap-2`}
+                          >
+                            <span className="text-gray-600 whitespace-nowrap flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(log.timestamp).toLocaleString('es-AR', {
+                                day: '2-digit', month: '2-digit',
+                                hour: '2-digit', minute: '2-digit'
+                              })}
+                            </span>
+                            <span className={`${actionColor} px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap`}>
+                              {actionLabel}
+                            </span>
+                            <span className={`${isError ? 'text-red-300' : 'text-gray-300'} flex-1 break-all`}>
+                              {log.details || 'Sin detalles'}
+                            </span>
+                            <span className="text-gray-600 whitespace-nowrap">
+                              {log.user}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Botón Cerrar */}
             <button
@@ -1264,10 +1385,8 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                     type="checkbox"
                     id="confirmReset"
                     className="rounded"
-                    onChange={(e) => {
-                      const button = document.getElementById('resetHardButton');
-                      button.disabled = !e.target.checked;
-                    }}
+                    checked={resetHardConfirmed}
+                    onChange={(e) => setResetHardConfirmed(e.target.checked)}
                   />
                   <label htmlFor="confirmReset" className="text-sm text-yellow-800 dark:text-yellow-200">
                     Entiendo que perderé TODOS mis cambios locales
@@ -1280,8 +1399,9 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                     onClick={() => {
                       handlePull(resetHardBranch, false, true);
                       setShowResetHardConfirm(false);
+                      setResetHardConfirmed(false);
                     }}
-                    disabled={true}
+                    disabled={!resetHardConfirmed}
                     className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {gitLoading ? 'Sobrescribiendo...' : '🔄 SOBRESCRIBIR RAMA'}
@@ -1290,6 +1410,7 @@ export default function GitHubModal({ isOpen, onClose, instanceName, onSuccess }
                     onClick={() => {
                       setShowResetHardConfirm(false);
                       setResetHardBranch('');
+                      setResetHardConfirmed(false);
                     }}
                     disabled={gitLoading}
                     className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
