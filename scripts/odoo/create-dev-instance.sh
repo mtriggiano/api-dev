@@ -264,7 +264,7 @@ sudo systemctl enable "odoo19e-$INSTANCE_NAME"
 # Regenerar assets antes de iniciar el servicio
 echo "🎨 Regenerando assets (CSS, JS, iconos)..."
 echo "   Esto puede tomar algunos minutos..."
-sudo -u $USER "$VENV_DIR/bin/python3" "$BASE_DIR/odoo-server/odoo-bin" -c "$ODOO_CONF" --update=all --stop-after-init
+sudo -u $USER "$VENV_DIR/bin/python3" "$BASE_DIR/odoo-server/odoo-bin" -c "$ODOO_CONF" --update=web --stop-after-init
 
 if [ $? -ne 0 ]; then
   echo "⚠️  Advertencia: Error al actualizar módulos. Continuando..."
