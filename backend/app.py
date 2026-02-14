@@ -31,12 +31,14 @@ def create_app():
     from routes.test_upload import test_upload_bp
     from routes.chunked_upload import chunked_upload_bp
     from routes.odoo_logs import odoo_logs_bp
+    from routes.backup_v2 import backup_v2_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(metrics_bp, url_prefix='/api/metrics')
     app.register_blueprint(instances_bp, url_prefix='/api/instances')
     app.register_blueprint(logs_bp, url_prefix='/api/logs')
     app.register_blueprint(backup_bp, url_prefix='/api/backup')
+    app.register_blueprint(backup_v2_bp, url_prefix='/api/backup/v2')
     app.register_blueprint(github_bp, url_prefix='/api/github')
     app.register_blueprint(test_upload_bp, url_prefix='/api')
     app.register_blueprint(chunked_upload_bp, url_prefix='/api')

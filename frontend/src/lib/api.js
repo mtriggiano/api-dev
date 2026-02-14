@@ -224,3 +224,51 @@ export const github = {
 };
 
 export default api;
+
+export const backupV2 = {
+  listInstances: () => 
+    api.get('/api/backup/v2/instances'),
+  
+  getInstanceConfig: (instanceName) => 
+    api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/config`),
+  
+  updateInstanceConfig: (instanceName, config) => 
+    api.put(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/config`, config),
+  
+  toggleAutoBackup: (instanceName, enabled) => 
+    api.post(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/toggle`, { enabled }),
+  
+  listBackups: (instanceName) => 
+    api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backups`),
+  
+  createBackup: (instanceName) => 
+    api.post(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backup`),
+  
+  deleteBackup: (instanceName, filename) => 
+    api.delete(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backups/${encodeURIComponent(filename)}`),
+  
+  downloadBackup: (instanceName, filename) => 
+    api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backups/${encodeURIComponent(filename)}/download`, {
+      responseType: 'blob'
+    }),
+  
+  restoreBackup: (instanceName, filename) => 
+    api.post(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/restore`, { filename }),
+  
+  uploadBackup: (instanceName, formData, onProgress) => 
+    api.post(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      onUploadProgress: onProgress
+    }),
+  
+  getBackupLog: (instanceName) => 
+    api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backup-log`),
+  
+  getRestoreLog: (instanceName) => 
+    api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/restore-log`),
+  
+  getGlobalStats: () => 
+    api.get('/api/backup/v2/stats'),
+};
