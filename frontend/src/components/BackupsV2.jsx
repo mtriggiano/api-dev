@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { backupV2 } from '../lib/api';
-import { Server, Settings, Download, Trash2, RefreshCw, AlertCircle, Clock, HardDrive, Play, Pause, Database, Upload, Pencil } from 'lucide-react';
+import { Server, Settings, Download, Trash2, RefreshCw, AlertCircle, Clock, HardDrive, Play, Pause, Database, Upload, Pencil, Activity, Power } from 'lucide-react';
 import Toast from './Toast';
 
 // Cliente axios local (api.js está gitignored, pero necesitamos enviar payloads nuevos)
@@ -39,9 +39,13 @@ export default function BackupsV2() {
   const [backupProgress, setBackupProgress] = useState({});
   const [restoreProgress, setRestoreProgress] = useState({});
   const [showUploadModal, setShowUploadModal] = useState({ show: false, instance: null });
+  const [globalStats, setGlobalStats] = useState(null);
+  const [cronActive, setCronActive] = useState(false);
 
   useEffect(() => {
     fetchInstances();
+    fetchGlobalStats();
+    checkCronStatus();
     
     // Verificar si hay una instancia en la URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -64,6 +68,26 @@ export default function BackupsV2() {
       setToast({ show: true, message: 'Error al cargar instancias', type: 'error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchGlobalStats = async () => {
+    try {
+      const response = await backupV2.getGlobalStats();
+      setGlobalStats(response.data);
+    } catch (error) {
+      console.error('Error fetching global stats:', error);
+    }
+  };
+
+  const checkCronStatus = async () => {
+    try {
+      const response = await backupV2.listInstances();
+      const instances = response.data.instances || [];
+      const hasEnabled = instances.some(i => i.auto_backup_enabled);
+      setCronActive(hasEnabled);
+    } catch (error) {
+      console.error('Error checking cron status:', error);
     }
   };
 
@@ -236,6 +260,50 @@ export default function BackupsV2() {
           <RefreshCw className="w-4 h-4" />
           Actualizar
         </button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex items-center gap-4">
+          <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+            <Database className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Total de Backups</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{globalStats?.total_backups ?? '-'}</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex items-center gap-4">
+          <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+            <HardDrive className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Espacio Utilizado</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{globalStats?.total_size_human ?? '-'}</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex items-center gap-4">
+          <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
+            <Clock className="w-6 h-6 text-green-600 dark:text-green-400" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Retención</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">7 días</p>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 flex items-center gap-4">
+          <div className="p-3 rounded-lg" style={{ backgroundColor: cronActive ? 'rgba(34,197,94,0.15)' : 'rgba(107,114,128,0.15)' }}>
+            <Activity className={`w-6 h-6 ${cronActive ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`} />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Servicio Cron</p>
+            <p className={`text-2xl font-bold ${cronActive ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>{cronActive ? 'Activo' : 'Inactivo'}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">{cronActive ? '✓ Backup programado' : 'Sin backups programados'}</p>
+          </div>
+          <button onClick={() => { fetchInstances(); fetchGlobalStats(); checkCronStatus(); }} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors" title="Actualizar estado">
+            <Power className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
