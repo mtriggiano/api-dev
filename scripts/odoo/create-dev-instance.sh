@@ -476,7 +476,7 @@ fi
 echo "🎨 Regenerando assets..."
 cd "__BASE_DIR__"
 source venv/bin/activate
-./venv/bin/python3 ./odoo-server/odoo-bin -c ./odoo.conf --update=all --stop-after-init
+./venv/bin/python3 ./odoo-server/odoo-bin -c ./odoo.conf --update=web --stop-after-init
 
 echo "▶️  Iniciando servicio Odoo..."
 sudo systemctl start "odoo19e-$INSTANCE_NAME"
@@ -627,7 +627,7 @@ sudo systemctl stop "odoo19e-$INSTANCE_NAME"
 echo "🎨 Regenerando assets..."
 cd "$BASE_DIR"
 source venv/bin/activate
-./venv/bin/python3 ./odoo-server/odoo-bin -c ./odoo.conf --update=all --stop-after-init
+./venv/bin/python3 ./odoo-server/odoo-bin -c ./odoo.conf --update=web --stop-after-init
 
 echo "▶️  Iniciando servicio Odoo..."
 sudo systemctl start "odoo19e-$INSTANCE_NAME"
