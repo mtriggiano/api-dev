@@ -149,7 +149,7 @@ class InstanceManager:
         
         return instance
     
-    def create_dev_instance(self, name):
+    def create_dev_instance(self, name, certbot_email=None):
         """Crea una nueva instancia de desarrollo"""
         self._init_paths()
         script_path = os.path.join(self.scripts_path, 'odoo/create-dev-instance.sh')
@@ -158,10 +158,15 @@ class InstanceManager:
             return {'success': False, 'error': 'Script de creación no encontrado'}
         
         try:
+            # Construir comando con email opcional para certbot
+            cmd = ['/bin/bash', script_path, name]
+            if certbot_email:
+                cmd.append(certbot_email)
+            
             # Ejecutar script en background desacoplado del proceso padre
             with open(f'/tmp/odoo-create-dev-{name}.log', 'w') as log_file:
                 process = subprocess.Popen(
-                    ['/bin/bash', script_path, name],
+                    cmd,
                     stdin=subprocess.PIPE,
                     stdout=log_file,
                     stderr=subprocess.STDOUT,

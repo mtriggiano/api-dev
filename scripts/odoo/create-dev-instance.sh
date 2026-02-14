@@ -63,6 +63,9 @@ else
   read -p "> " DEV_NAME
 fi
 
+# Email para certificado SSL (opcional, segundo argumento)
+CERTBOT_EMAIL="${2:-admin@${DOMAIN_ROOT}}"
+
 # Validar nombre
 if [[ -z "$DEV_NAME" ]]; then
   echo "❌ Debes proporcionar un nombre."
@@ -332,7 +335,7 @@ if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     sudo nginx -t && sudo systemctl reload nginx || sudo systemctl start nginx
     
     echo "📜 Obteniendo certificado SSL con Certbot..."
-    sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
+    sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $CERTBOT_EMAIL --redirect
     
     echo "✅ Certificado SSL obtenido y configurado automáticamente por Certbot"
 else

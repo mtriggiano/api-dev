@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { instances, github } from '../lib/api';
-import { Server, Play, Square, Trash2, RefreshCw, Database, FileText, Plus, Eye, AlertCircle, FolderSync, Palette, Github, GitCommit, Clock } from 'lucide-react';
+import { Server, Play, Square, Trash2, RefreshCw, Database, FileText, Plus, Eye, AlertCircle, FolderSync, Palette, Github, GitCommit, Clock, Terminal } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import Toast from './Toast';
 import GitHubModal from './GitHubModal';
+import LogViewer from './LogViewer';
 
 export default function Instances() {
   const [instanceList, setInstanceList] = useState([]);
@@ -11,6 +12,7 @@ export default function Instances() {
   const [actionLoading, setActionLoading] = useState({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
+  const [certbotEmail, setCertbotEmail] = useState('');
   const [selectedInstance, setSelectedInstance] = useState(null);
   const [logs, setLogs] = useState('');
   const [activeLogTab, setActiveLogTab] = useState('systemd');
@@ -21,6 +23,7 @@ export default function Instances() {
   const [updateLog, setUpdateLog] = useState({ show: false, instanceName: '', action: '', log: '', completed: false });
   const [restartModal, setRestartModal] = useState({ show: false, instanceName: '', status: 'Reiniciando...' });
   const [githubModal, setGithubModal] = useState({ show: false, instanceName: '' });
+  const [logViewerInstance, setLogViewerInstance] = useState(null);
 
   useEffect(() => {
     fetchInstances();
@@ -138,7 +141,7 @@ export default function Instances() {
 
     setActionLoading({ create: true });
     try {
-      const response = await instances.create(newInstanceName);
+      const response = await instances.create(newInstanceName, certbotEmail || undefined);
       setShowCreateModal(false);
       setCreationLog({ show: true, instanceName: newInstanceName, log: 'Iniciando creaci\u00f3n...\n' });
       
@@ -163,6 +166,7 @@ export default function Instances() {
       }, 2000);
       
       setNewInstanceName('');
+      setCertbotEmail('');
     } catch (error) {
       setToast({ show: true, message: error.response?.data?.error || 'Error al crear la instancia', type: 'error' });
     } finally {
@@ -252,6 +256,7 @@ export default function Instances() {
                   onAction={showConfirmation}
                   onViewLogs={handleViewLogs}
                   onGitHub={(instanceName) => setGithubModal({ show: true, instanceName })}
+                  onOpenLogViewer={(name) => setLogViewerInstance(name)}
                   actionLoading={actionLoading}
                   isProduction={true}
                 />
@@ -278,6 +283,7 @@ export default function Instances() {
                   onAction={showConfirmation}
                   onViewLogs={handleViewLogs}
                   onGitHub={(instanceName) => setGithubModal({ show: true, instanceName })}
+                  onOpenLogViewer={(name) => setLogViewerInstance(name)}
                   actionLoading={actionLoading}
                   isProduction={false}
                 />
@@ -297,6 +303,13 @@ export default function Instances() {
               value={newInstanceName}
               onChange={(e) => setNewInstanceName(e.target.value)}
               placeholder="Nombre (ej: juan, testing, feature-xyz)"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+            />
+            <input
+              type="email"
+              value={certbotEmail}
+              onChange={(e) => setCertbotEmail(e.target.value)}
+              placeholder="Email para SSL (opcional, ej: admin@empresa.com)"
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
             />
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-4">
@@ -511,6 +524,14 @@ export default function Instances() {
         />
       )}
 
+      {/* Visor de Logs Odoo */}
+      {logViewerInstance && (
+        <LogViewer
+          instanceName={logViewerInstance}
+          onClose={() => setLogViewerInstance(null)}
+        />
+      )}
+
       {/* Modal de GitHub */}
       <GitHubModal
         isOpen={githubModal.show}
@@ -548,7 +569,7 @@ function getConfirmMessage(action, instanceName) {
   return messages[action] || '¿Deseas continuar con esta acción?';
 }
 
-function InstanceCard({ instance, onAction, onViewLogs, onGitHub, actionLoading, isProduction }) {
+function InstanceCard({ instance, onAction, onViewLogs, onGitHub, onOpenLogViewer, actionLoading, isProduction }) {
   const statusColor = instance.status === 'active' ? 'text-green-600' : 'text-red-600';
   const statusBg = instance.status === 'active' ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900';
   const [currentCommit, setCurrentCommit] = useState(null);
@@ -696,11 +717,11 @@ function InstanceCard({ instance, onAction, onViewLogs, onGitHub, actionLoading,
         )}
         
         <button
-          onClick={() => onViewLogs(instance.name)}
-          title="Ver los logs del servicio systemd"
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          onClick={() => onOpenLogViewer(instance.name)}
+          title="Visor de logs Odoo con colores y filtros"
+          className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
         >
-          <Eye className="w-4 h-4" />
+          <Terminal className="w-4 h-4" />
           <span className="hidden sm:inline">Logs</span>
         </button>
       </div>

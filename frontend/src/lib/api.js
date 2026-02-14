@@ -68,8 +68,8 @@ export const instances = {
   get: (name) => 
     api.get(`/api/instances/${name}`),
   
-  create: (name) => 
-    api.post('/api/instances/create', { name }),
+  create: (name, certbotEmail) => 
+    api.post('/api/instances/create', { name, certbot_email: certbotEmail }),
   
   delete: (name) => 
     api.delete(`/api/instances/${name}`),

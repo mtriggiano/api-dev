@@ -60,7 +60,7 @@ def create_instance():
         return jsonify({'error': 'Nombre de instancia requerido'}), 400
     
     try:
-        result = manager.create_dev_instance(data['name'])
+        result = manager.create_dev_instance(data['name'], data.get('certbot_email'))
         
         # Log
         log_action(
