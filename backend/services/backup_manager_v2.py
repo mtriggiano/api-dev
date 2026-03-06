@@ -160,7 +160,7 @@ class BackupManagerV2:
         except Exception as e:
             logger.error(f"Error getting production instances: {e}")
             # Fallback: buscar en rutas conocidas
-            prod_root = Config.PROD_ROOT if hasattr(Config, 'PROD_ROOT') else '/home/go/apps/production/odoo'
+            prod_root = Config.PROD_ROOT if hasattr(Config, 'PROD_ROOT') else '/home/go/apps/production'
             if os.path.exists(prod_root):
                 for item in os.listdir(prod_root):
                     item_path = os.path.join(prod_root, item)

@@ -1,46 +1,94 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { instances, github } from '../lib/api';
-import { Server, Play, Square, Trash2, RefreshCw, Database, FileText, Plus, Eye, AlertCircle, FolderSync, Palette, Github, GitCommit, Clock, Terminal } from 'lucide-react';
+import { Server, Play, Square, Trash2, RefreshCw, Database, FileText, Plus, Eye, AlertCircle, FolderSync, Palette, Github, GitCommit, Clock, Settings, MoreVertical, Search, Filter } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import Toast from './Toast';
 import GitHubModal from './GitHubModal';
 import LogViewer from './LogViewer';
 
+// Modales refactorizados
+import { CreationLogModal, UpdateLogModal, CreateDevModal, CreateProdModal, LogsModal } from './instances/modals';
+// Hooks personalizados
+import { useInstances, useCreationLog, useUpdateLog } from './instances/hooks';
+// Componentes de tarjetas
+import { InstanceCard } from './instances/cards';
+// Utilidades
+import { getConfirmTitle, getConfirmMessage, applyAllFilters } from './instances/utils';
+
+const INSTANCE_SEARCH_STORAGE_KEY = 'api-dev.instances.searchTerm';
+const INSTANCE_PRODUCTION_FILTER_STORAGE_KEY = 'api-dev.instances.filterByProduction';
+
 export default function Instances() {
-  const [instanceList, setInstanceList] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Hook para manejar lista de instancias (reemplaza useState y useEffect)
+  const { instanceList, loading, fetchInstances } = useInstances();
+  
+  // Hook para manejar log de creación (reemplaza useState, useEffect y polling)
+  const { creationLog, creationLogRef, startPolling: startCreationPolling, closeLog: closeCreationLog } = useCreationLog();
+  
+  // Hook para manejar log de actualización (reemplaza useState, useEffect y polling)
+  const { updateLog, updateLogRef, startPolling: startUpdatePolling, closeLog: closeUpdateLog } = useUpdateLog();
   const [actionLoading, setActionLoading] = useState({});
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateProdModal, setShowCreateProdModal] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
-  const [certbotEmail, setCertbotEmail] = useState('');
+  const [newProdInstanceName, setNewProdInstanceName] = useState('');
+  const [odooVersion, setOdooVersion] = useState('19');
+  const [odooEdition, setOdooEdition] = useState('enterprise');
+  const [sslMethod, setSslMethod] = useState('letsencrypt');
+  const [availableProductionInstances, setAvailableProductionInstances] = useState([]);
+  const [selectedSourceInstance, setSelectedSourceInstance] = useState('');
+  const [neutralizeDatabase, setNeutralizeDatabase] = useState(true);
+  const [gitBranch, setGitBranch] = useState('');
   const [selectedInstance, setSelectedInstance] = useState(null);
   const [logs, setLogs] = useState('');
   const [activeLogTab, setActiveLogTab] = useState('systemd');
   const [logsLoading, setLogsLoading] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, action: null, instanceName: null, neutralize: true });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-  const [creationLog, setCreationLog] = useState({ show: false, instanceName: '', log: '' });
-  const [updateLog, setUpdateLog] = useState({ show: false, instanceName: '', action: '', log: '', completed: false });
   const [restartModal, setRestartModal] = useState({ show: false, instanceName: '', status: 'Reiniciando...' });
   const [githubModal, setGithubModal] = useState({ show: false, instanceName: '' });
   const [logViewerInstance, setLogViewerInstance] = useState(null);
+  const [deleteProductionModal, setDeleteProductionModal] = useState({ show: false, instanceName: '', confirmation: '', step: 1 });
+  const [filterByProduction, setFilterByProduction] = useState(() => {
+    try {
+      return localStorage.getItem(INSTANCE_PRODUCTION_FILTER_STORAGE_KEY) || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [searchTerm, setSearchTerm] = useState(() => {
+    try {
+      return localStorage.getItem(INSTANCE_SEARCH_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
 
   useEffect(() => {
-    fetchInstances();
-    const interval = setInterval(fetchInstances, 10000); // Actualizar cada 10 segundos
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchInstances = async () => {
     try {
-      const response = await instances.list();
-      setInstanceList(response.data.instances);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching instances:', error);
-      setLoading(false);
+      if (searchTerm) {
+        localStorage.setItem(INSTANCE_SEARCH_STORAGE_KEY, searchTerm);
+      } else {
+        localStorage.removeItem(INSTANCE_SEARCH_STORAGE_KEY);
+      }
+    } catch {
+      // Ignorar errores de acceso a localStorage
     }
-  };
+  }, [searchTerm]);
+
+  useEffect(() => {
+    try {
+      if (filterByProduction && filterByProduction !== 'all') {
+        localStorage.setItem(INSTANCE_PRODUCTION_FILTER_STORAGE_KEY, filterByProduction);
+      } else {
+        localStorage.removeItem(INSTANCE_PRODUCTION_FILTER_STORAGE_KEY);
+      }
+    } catch {
+      // Ignorar errores de acceso a localStorage
+    }
+  }, [filterByProduction]);
+  
+  // Los hooks ya manejan: fetchInstances, creationLog, updateLog, refs y auto-scroll
 
   const showConfirmation = (action, instanceName) => {
     // Por defecto, neutralizar en update-db
@@ -65,31 +113,9 @@ export default function Instances() {
           : await instances.regenerateAssets(instanceName);
         
         if (response.data.success) {
-          setUpdateLog({ show: true, instanceName, action, log: 'Iniciando actualizaci\u00f3n...\n', completed: false });
-          
-          // Polling del log cada 2 segundos
-          const logInterval = setInterval(async () => {
-            try {
-              const logResponse = await instances.getUpdateLog(instanceName, action);
-              
-              // Si el log contiene "\u2705" significa que termin\u00f3
-              const isCompleted = logResponse.data.log && logResponse.data.log.includes('\u2705');
-              
-              setUpdateLog(prev => ({ 
-                ...prev, 
-                log: logResponse.data.log || 'Esperando...', 
-                completed: isCompleted 
-              }));
-              
-              if (isCompleted) {
-                clearInterval(logInterval);
-                setToast({ show: true, message: 'Actualizaci\u00f3n completada', type: 'success' });
-                fetchInstances();
-              }
-            } catch (err) {
-              console.error('Error fetching log:', err);
-            }
-          }, 2000);
+          // Usar hook para manejar el polling del log
+          startUpdatePolling(instanceName, action);
+          fetchInstances();
         }
       } else if (action === 'restart') {
         // Para reiniciar, mostrar modal con estado
@@ -111,6 +137,10 @@ export default function Instances() {
             }, 2000);
           }, 2000);
         }
+      } else if (action === 'delete-production') {
+        // Para eliminar producción, abrir modal de doble confirmación
+        handleDeleteProduction(instanceName);
+        return; // No continuar con el flujo normal
       } else {
         // Para delete y otras acciones
         switch (action) {
@@ -133,6 +163,32 @@ export default function Instances() {
     }
   };
 
+  const handleDeleteProduction = async (instanceName) => {
+    setDeleteProductionModal({ show: true, instanceName, confirmation: '', step: 1 });
+  };
+
+  const handleConfirmDeleteProduction = async () => {
+    const { instanceName, confirmation } = deleteProductionModal;
+    const expectedConfirmation = `BORRAR${instanceName}`;
+    
+    if (confirmation !== expectedConfirmation) {
+      setToast({ show: true, message: `Debes escribir exactamente: ${expectedConfirmation}`, type: 'error' });
+      return;
+    }
+
+    setActionLoading({ ...actionLoading, [`delete-prod-${instanceName}`]: true });
+    try {
+      const response = await instances.deleteProduction(instanceName, confirmation);
+      setDeleteProductionModal({ show: false, instanceName: '', confirmation: '', step: 1 });
+      setToast({ show: true, message: response.data.message || 'Instancia de producción eliminada', type: 'success' });
+      fetchInstances();
+    } catch (error) {
+      setToast({ show: true, message: error.response?.data?.error || 'Error al eliminar la instancia', type: 'error' });
+    } finally {
+      setActionLoading({ ...actionLoading, [`delete-prod-${instanceName}`]: false });
+    }
+  };
+
   const handleCreateInstance = async () => {
     if (!newInstanceName.trim()) {
       setToast({ show: true, message: 'Debes ingresar un nombre para la instancia', type: 'warning' });
@@ -141,36 +197,63 @@ export default function Instances() {
 
     setActionLoading({ create: true });
     try {
-      const response = await instances.create(newInstanceName, certbotEmail || undefined);
+      const response = await instances.create(newInstanceName, selectedSourceInstance, neutralizeDatabase, gitBranch);
       setShowCreateModal(false);
-      setCreationLog({ show: true, instanceName: newInstanceName, log: 'Iniciando creaci\u00f3n...\n' });
       
-      // Polling del log cada 2 segundos
-      const logInterval = setInterval(async () => {
-        try {
-          const logResponse = await instances.getCreationLog(newInstanceName);
-          setCreationLog(prev => ({ ...prev, log: logResponse.data.log || 'Esperando...' }));
-          
-          // Si el log contiene "\u2705" (checkmark) significa que termin\u00f3
-          if (logResponse.data.log && logResponse.data.log.includes('\u2705 Instancia')) {
-            clearInterval(logInterval);
-            setTimeout(() => {
-              setCreationLog({ show: false, instanceName: '', log: '' });
-              setToast({ show: true, message: 'Instancia creada exitosamente', type: 'success' });
-              fetchInstances();
-            }, 3000);
-          }
-        } catch (err) {
-          console.error('Error fetching log:', err);
-        }
-      }, 2000);
+      // Usar el nombre completo de la instancia que devuelve el backend
+      const instanceName = response.data.instance_name || `dev-${newInstanceName}`;
+      
+      // Usar hook para manejar el polling del log
+      startCreationPolling(instanceName, false); // false = dev instance
       
       setNewInstanceName('');
-      setCertbotEmail('');
+      setGitBranch('');
     } catch (error) {
       setToast({ show: true, message: error.response?.data?.error || 'Error al crear la instancia', type: 'error' });
     } finally {
       setActionLoading({ create: false });
+    }
+  };
+
+  const handleOpenCreateModal = async () => {
+    setShowCreateModal(true);
+    try {
+      const response = await instances.getProductionInstances();
+      setAvailableProductionInstances(response.data.instances || []);
+      if (response.data.instances && response.data.instances.length > 0) {
+        setSelectedSourceInstance(response.data.instances[0].name);
+      }
+    } catch (error) {
+      console.error('Error cargando instancias de producción:', error);
+      setToast({ show: true, message: 'Error cargando instancias de producción', type: 'error' });
+    }
+  };
+
+
+  const handleCreateProdInstance = async () => {
+    if (!newProdInstanceName.trim()) {
+      setToast({ show: true, message: 'Debes ingresar un nombre para la instancia', type: 'warning' });
+      return;
+    }
+
+    setActionLoading({ createProd: true });
+    try {
+      const response = await instances.createProduction(newProdInstanceName, odooVersion, odooEdition, sslMethod);
+      setShowCreateProdModal(false);
+      
+      const instanceName = response.data.instance_name || `prod-${newProdInstanceName}`;
+      
+      // Usar hook para manejar el polling del log
+      startCreationPolling(instanceName, true); // true = production instance
+      
+      setNewProdInstanceName('');
+      setOdooVersion('19');
+      setOdooEdition('enterprise');
+      setSslMethod('letsencrypt');
+    } catch (error) {
+      setToast({ show: true, message: error.response?.data?.error || 'Error al crear la instancia de producción', type: 'error' });
+    } finally {
+      setActionLoading({ createProd: false });
     }
   };
 
@@ -219,8 +302,12 @@ export default function Instances() {
     );
   }
 
-  const productionInstances = instanceList.filter(i => i.type === 'production');
-  const developmentInstances = instanceList.filter(i => i.type === 'development');
+  // Aplicar todos los filtros usando utilidad
+  const { production: productionInstances, development: developmentInstances } = applyAllFilters(
+    instanceList, 
+    filterByProduction, 
+    searchTerm
+  );
 
   return (
     <div className="space-y-6">
@@ -230,13 +317,97 @@ export default function Instances() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Instancias Odoo</h2>
           <p className="text-gray-600 dark:text-gray-300 mt-1">Gestión de instancias de producción y desarrollo</p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Nueva Instancia Dev
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowCreateProdModal(true)}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Nueva Producción
+          </button>
+          <button
+            onClick={handleOpenCreateModal}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Nueva Desarrollo
+          </button>
+        </div>
+      </div>
+
+      {/* Barra de filtros y búsqueda */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Filtro por instancia de producción */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <Filter className="w-4 h-4 inline mr-2" />
+              Filtrar por Instancia de Producción
+            </label>
+            <select
+              value={filterByProduction}
+              onChange={(e) => setFilterByProduction(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="all">Todas las instancias</option>
+              {instanceList
+                .filter(i => i.type === 'production')
+                .map(prod => (
+                  <option key={prod.name} value={prod.name}>
+                    {prod.name} {prod.domain ? `(${prod.domain})` : ''}
+                  </option>
+                ))
+              }
+            </select>
+          </div>
+
+          {/* Buscador */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <Search className="w-4 h-4 inline mr-2" />
+              Buscar
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por nombre, dominio o base de datos..."
+                className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Botón para limpiar filtros */}
+          {(filterByProduction !== 'all' || searchTerm) && (
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setFilterByProduction('all');
+                  setSearchTerm('');
+                }}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors whitespace-nowrap"
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Contador de resultados */}
+        {(filterByProduction !== 'all' || searchTerm) && (
+          <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+            Mostrando: {productionInstances.length} producción, {developmentInstances.length} desarrollo
+          </div>
+        )}
       </div>
 
       {/* Producción */}
@@ -293,49 +464,38 @@ export default function Instances() {
         </div>
       </div>
 
-      {/* Modal de creación */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Crear Nueva Instancia de Desarrollo</h3>
-            <input
-              type="text"
-              value={newInstanceName}
-              onChange={(e) => setNewInstanceName(e.target.value)}
-              placeholder="Nombre (ej: juan, testing, feature-xyz)"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-            />
-            <input
-              type="email"
-              value={certbotEmail}
-              onChange={(e) => setCertbotEmail(e.target.value)}
-              placeholder="Email para SSL (opcional, ej: admin@empresa.com)"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-            />
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-4">
-              <p className="text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>La creación puede tardar varios minutos. Se clonará desde producción y se neutralizará automáticamente.</span>
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={handleCreateInstance}
-                disabled={actionLoading.create}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {actionLoading.create ? 'Creando...' : 'Crear'}
-              </button>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="flex-1 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 px-4 py-2 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal de creación de desarrollo - Componente refactorizado */}
+      <CreateDevModal
+        show={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreate={handleCreateInstance}
+        newInstanceName={newInstanceName}
+        setNewInstanceName={setNewInstanceName}
+        selectedSourceInstance={selectedSourceInstance}
+        setSelectedSourceInstance={setSelectedSourceInstance}
+        neutralizeDatabase={neutralizeDatabase}
+        setNeutralizeDatabase={setNeutralizeDatabase}
+        gitBranch={gitBranch}
+        setGitBranch={setGitBranch}
+        productionInstances={productionInstances}
+        actionLoading={actionLoading}
+      />
+
+      {/* Modal de creación de producción - Componente refactorizado */}
+      <CreateProdModal
+        show={showCreateProdModal}
+        onClose={() => setShowCreateProdModal(false)}
+        onCreate={handleCreateProdInstance}
+        newProdInstanceName={newProdInstanceName}
+        setNewProdInstanceName={setNewProdInstanceName}
+        odooVersion={odooVersion}
+        setOdooVersion={setOdooVersion}
+        odooEdition={odooEdition}
+        setOdooEdition={setOdooEdition}
+        sslMethod={sslMethod}
+        setSslMethod={setSslMethod}
+        actionLoading={actionLoading}
+      />
 
       {/* Modal de reinicio */}
       {restartModal.show && (
@@ -356,149 +516,30 @@ export default function Instances() {
         </div>
       )}
 
-      {/* Modal de log de actualizaci\u00f3n */}
-      {updateLog.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl max-h-[80vh] flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {updateLog.action === 'update-db' ? 'Actualizando Base de Datos' : updateLog.action === 'update-files' ? 'Actualizando Archivos' : updateLog.action === 'sync-filestore' ? 'Sincronizando Filestore' : 'Regenerando Assets'}: {updateLog.instanceName}
-              </h3>
-              <button
-                onClick={() => setUpdateLog({ show: false, instanceName: '', action: '', log: '', completed: false })}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            {!updateLog.completed ? (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 mb-4">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  ⏳ La actualización puede tardar varios minutos. El log se actualiza automáticamente.
-                </p>
-              </div>
-            ) : (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-3 mb-4">
-                <p className="text-sm text-green-800 dark:text-green-200">
-                  ✅ Actualización completada. Puedes cerrar este modal.
-                </p>
-              </div>
-            )}
-            <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto flex-1 text-sm font-mono whitespace-pre-wrap">
-              {updateLog.log}
-            </pre>
-          </div>
-        </div>
-      )}
+      {/* Modal de log de actualización */}
+      <UpdateLogModal 
+        updateLog={updateLog}
+        updateLogRef={updateLogRef}
+        onClose={closeUpdateLog}
+      />
 
-      {/* Modal de log de creaci\u00f3n */}
-      {creationLog.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl max-h-[80vh] flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Creando instancia: {creationLog.instanceName}</h3>
-              <button
-                onClick={() => setCreationLog({ show: false, instanceName: '', log: '' })}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-              <p className="text-sm text-blue-800">
-                ⏳ La creación puede tardar varios minutos. El log se actualiza automáticamente.
-              </p>
-            </div>
-            <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto flex-1 text-sm font-mono whitespace-pre-wrap">
-              {creationLog.log}
-            </pre>
-          </div>
-        </div>
-      )}
+      {/* Modal de log de creación */}
+      <CreationLogModal 
+        creationLog={creationLog}
+        creationLogRef={creationLogRef}
+        onClose={closeCreationLog}
+      />
 
-      {/* Modal de logs */}
-      {selectedInstance && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl max-h-[80vh] flex flex-col">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Logs: {selectedInstance}</h3>
-              <button
-                onClick={() => setSelectedInstance(null)}
-                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            
-            {/* Pestañas de logs */}
-            <div className="flex gap-2 mb-4 border-b border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => handleLogTabChange('systemd')}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  activeLogTab === 'systemd'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Systemd Journal
-              </button>
-              <button
-                onClick={() => handleLogTabChange('odoo')}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  activeLogTab === 'odoo'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Odoo Log
-              </button>
-              <button
-                onClick={() => handleLogTabChange('nginx-access')}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  activeLogTab === 'nginx-access'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Nginx Access
-              </button>
-              <button
-                onClick={() => handleLogTabChange('nginx-error')}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  activeLogTab === 'nginx-error'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Nginx Error
-              </button>
-              <button
-                onClick={() => handleLogTabChange('git-deploy')}
-                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-                  activeLogTab === 'git-deploy'
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Git/Deploy
-              </button>
-            </div>
-            
-            {/* Contenido del log */}
-            <div className="flex-1 overflow-hidden flex flex-col">
-              {logsLoading ? (
-                <div className="flex items-center justify-center flex-1">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
-              ) : (
-                <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto flex-1 text-sm font-mono">
-                  {logs}
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal de logs - Componente refactorizado */}
+      <LogsModal
+        show={!!selectedInstance}
+        instanceName={selectedInstance}
+        activeLogTab={activeLogTab}
+        logs={logs}
+        logsLoading={logsLoading}
+        onClose={() => setSelectedInstance(null)}
+        onTabChange={handleLogTabChange}
+      />
 
       {/* Modal de confirmación */}
       <ConfirmModal
@@ -541,190 +582,96 @@ export default function Instances() {
           setToast({ show: true, message: 'GitHub conectado exitosamente', type: 'success' });
         }}
       />
-    </div>
-  );
-}
 
-function getConfirmTitle(action) {
-  const titles = {
-    restart: 'Reiniciar Instancia',
-    'update-db': 'Actualizar Base de Datos',
-    'update-files': 'Actualizar Archivos',
-    'sync-filestore': 'Sincronizar Filestore',
-    'regenerate-assets': 'Regenerar Assets',
-    delete: 'Eliminar Instancia'
-  };
-  return titles[action] || 'Confirmar Acción';
-}
+      {/* Modal de eliminación de producción con doble confirmación */}
+      {deleteProductionModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-100 dark:bg-red-900 p-3 rounded-full">
+                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Eliminar Instancia de Producción
+              </h3>
+            </div>
 
-function getConfirmMessage(action, instanceName) {
-  const messages = {
-    restart: `¿Deseas reiniciar la instancia ${instanceName}? El servicio se detendrá temporalmente.`,
-    'update-db': `¿Actualizar la base de datos de ${instanceName} desde producción? Esta operación puede tardar varios minutos.`,
-    'update-files': `¿Actualizar los archivos de ${instanceName} desde producción?`,
-    'sync-filestore': `¿Sincronizar el filestore (imágenes y archivos) de ${instanceName} desde producción? Esto copiará todos los assets.`,
-    'regenerate-assets': `¿Regenerar los assets (CSS, JS, iconos) de ${instanceName}? El servicio se detendrá temporalmente.`,
-    delete: `¿Estás seguro de eliminar la instancia ${instanceName}? Esta acción no se puede deshacer y se perderán todos los datos.`
-  };
-  return messages[action] || '¿Deseas continuar con esta acción?';
-}
+            {deleteProductionModal.step === 1 ? (
+              <>
+                <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <p className="text-sm text-red-800 dark:text-red-200 font-semibold mb-2">
+                    ⚠️ ADVERTENCIA: Esta acción es IRREVERSIBLE
+                  </p>
+                  <p className="text-sm text-red-700 dark:text-red-300">
+                    Estás a punto de eliminar la instancia de producción <strong>{deleteProductionModal.instanceName}</strong>.
+                  </p>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-2">
+                    Esto eliminará:
+                  </p>
+                  <ul className="text-sm text-red-700 dark:text-red-300 list-disc list-inside mt-1 space-y-1">
+                    <li>La base de datos completa</li>
+                    <li>Todos los archivos y código</li>
+                    <li>El filestore (imágenes, PDFs, etc.)</li>
+                    <li>La configuración de Nginx</li>
+                    <li>El servicio systemd</li>
+                  </ul>
+                </div>
 
-function InstanceCard({ instance, onAction, onViewLogs, onGitHub, onOpenLogViewer, actionLoading, isProduction }) {
-  const statusColor = instance.status === 'active' ? 'text-green-600' : 'text-red-600';
-  const statusBg = instance.status === 'active' ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900';
-  const [currentCommit, setCurrentCommit] = useState(null);
-  const [loadingCommit, setLoadingCommit] = useState(false);
-
-  // Cargar commit actual cuando el componente se monta
-  useEffect(() => {
-    loadCurrentCommit();
-  }, [instance.name]);
-
-  const loadCurrentCommit = async () => {
-    setLoadingCommit(true);
-    try {
-      const response = await github.getCurrentCommit(instance.name);
-      if (response.data.success) {
-        setCurrentCommit(response.data.commit);
-      }
-    } catch (error) {
-      // Silenciosamente fallar si no hay config de Git
-      console.log('No Git config for', instance.name);
-    } finally {
-      setLoadingCommit(false);
-    }
-  };
-
-  return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow relative">
-      {/* Botón GitHub en esquina superior derecha - para todas las instancias */}
-      <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
-        <button
-          onClick={() => onGitHub(instance.name)}
-          title="Conectar con GitHub para control de versiones"
-          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-300 dark:border-gray-600"
-        >
-          <Github className="w-4 h-4" />
-          <span className="hidden sm:inline">GitHub</span>
-        </button>
-        
-        {/* Mostrar commit actual si existe */}
-        {currentCommit && (
-          <div className="flex items-center gap-2 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600">
-            <GitCommit className="w-3 h-3 text-gray-600 dark:text-gray-400" />
-            <span className="font-mono text-gray-700 dark:text-gray-300" title={currentCommit.message}>
-              {currentCommit.short_hash}
-            </span>
-          </div>
-        )}
-      </div>
-      
-      {/* Header con info */}
-      <div className="flex items-start gap-3 mb-4 pr-24">
-        <div className={`${statusBg} p-2 rounded-lg flex-shrink-0`}>
-          <Server className={`w-6 h-6 ${statusColor}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="font-semibold text-gray-900 dark:text-white">{instance.name}</h4>
-            <span className={`px-2 py-1 text-xs rounded-full ${statusBg} ${statusColor}`}>
-              {instance.status}
-            </span>
-          </div>
-          <div className="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
-            {instance.domain && (
-              <p className="truncate">🌐 <a href={`https://${instance.domain}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">{instance.domain}</a></p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteProductionModal({ show: false, instanceName: '', confirmation: '', step: 1 })}
+                    className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => setDeleteProductionModal({ ...deleteProductionModal, step: 2 })}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                  Para confirmar la eliminación, escribe exactamente:
+                </p>
+                <div className="mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  <code className="text-sm font-mono text-gray-900 dark:text-white">
+                    BORRAR{deleteProductionModal.instanceName}
+                  </code>
+                </div>
+                <input
+                  type="text"
+                  value={deleteProductionModal.confirmation}
+                  onChange={(e) => setDeleteProductionModal({ ...deleteProductionModal, confirmation: e.target.value })}
+                  placeholder={`BORRAR${deleteProductionModal.instanceName}`}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white mb-4"
+                  autoFocus
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteProductionModal({ show: false, instanceName: '', confirmation: '', step: 1 })}
+                    className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConfirmDeleteProduction}
+                    disabled={actionLoading[`delete-prod-${deleteProductionModal.instanceName}`] || deleteProductionModal.confirmation !== `BORRAR${deleteProductionModal.instanceName}`}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading[`delete-prod-${deleteProductionModal.instanceName}`] ? 'Eliminando...' : 'Eliminar Definitivamente'}
+                  </button>
+                </div>
+              </>
             )}
-            {instance.port && <p>🔌 Puerto: {instance.port}</p>}
-            {instance.database && <p className="truncate">🗄️ BD: {instance.database}</p>}
           </div>
         </div>
-      </div>
-
-      {/* Botones de acción - responsive */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => onAction('restart', instance.name)}
-          disabled={actionLoading[`restart-${instance.name}`]}
-          title="Reiniciar el servicio Odoo de esta instancia"
-          className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${actionLoading[`restart-${instance.name}`] ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline">Reiniciar</span>
-        </button>
-        
-        {!isProduction && (
-          <>
-            <button
-              onClick={() => onAction('update-db', instance.name)}
-              disabled={actionLoading[`update-db-${instance.name}`]}
-              title="Actualizar la base de datos desde producción (incluye filestore)"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Database className="w-4 h-4" />
-              <span className="hidden sm:inline">BD</span>
-            </button>
-            <button
-              onClick={() => onAction('update-files', instance.name)}
-              disabled={actionLoading[`update-files-${instance.name}`]}
-              title="Actualizar el código fuente de Odoo desde producción"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <FileText className="w-4 h-4" />
-              <span className="hidden sm:inline">Archivos</span>
-            </button>
-            <button
-              onClick={() => onAction('sync-filestore', instance.name)}
-              disabled={actionLoading[`sync-filestore-${instance.name}`]}
-              title="Sincronizar solo el filestore (imágenes, PDFs, assets) desde producción"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <FolderSync className="w-4 h-4" />
-              <span className="hidden sm:inline">Filestore</span>
-            </button>
-            <button
-              onClick={() => onAction('regenerate-assets', instance.name)}
-              disabled={actionLoading[`regenerate-assets-${instance.name}`]}
-              title="Regenerar assets (CSS, JS, iconos) de Odoo"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Palette className="w-4 h-4" />
-              <span className="hidden sm:inline">Assets</span>
-            </button>
-            <button
-              onClick={() => onAction('delete', instance.name)}
-              disabled={actionLoading[`delete-${instance.name}`]}
-              title="Eliminar permanentemente esta instancia de desarrollo"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Eliminar</span>
-            </button>
-          </>
-        )}
-        
-        {/* Botón de regenerar assets para producción */}
-        {isProduction && (
-          <button
-            onClick={() => onAction('regenerate-assets', instance.name)}
-            disabled={actionLoading[`regenerate-assets-${instance.name}`]}
-            title="Regenerar assets (CSS, JS, iconos) de Odoo"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/20 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <Palette className="w-4 h-4" />
-            <span className="hidden sm:inline">Assets</span>
-          </button>
-        )}
-        
-        <button
-          onClick={() => onOpenLogViewer(instance.name)}
-          title="Visor de logs Odoo con colores y filtros"
-          className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
-        >
-          <Terminal className="w-4 h-4" />
-          <span className="hidden sm:inline">Logs</span>
-        </button>
-      </div>
+      )}
     </div>
   );
 }
+
+// Funciones auxiliares ahora están en ./instances/utils/

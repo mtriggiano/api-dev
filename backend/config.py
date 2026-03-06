@@ -7,7 +7,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 env_path = project_root / '.env'
 load_dotenv(env_path)
-
+    
 class Config:
     # Flask
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -30,6 +30,12 @@ class Config:
     PUERTOS_FILE = os.getenv('PUERTOS_FILE', f'{DATA_PATH}/puertos_ocupados_odoo.txt')
     DEV_INSTANCES_FILE = os.getenv('DEV_INSTANCES_FILE', f'{DATA_PATH}/dev-instances.txt')
     BACKUPS_PATH = os.getenv('BACKUPS_PATH', '/home/go/backups')
+    SYSTEM_USER_SYNC_SCRIPT = os.getenv('SYSTEM_USER_SYNC_SCRIPT', f'{SCRIPTS_PATH}/users/sync-instance-access.sh')
+    SYSTEM_USER_SSH_KEY_SCRIPT = os.getenv('SYSTEM_USER_SSH_KEY_SCRIPT', f'{SCRIPTS_PATH}/users/set-ssh-public-key.sh')
+    
+    # Domain configuration - IMPORTANTE: El dominio raíz está protegido
+    DOMAIN_ROOT = os.getenv('DOMAIN_ROOT', 'hospitalprivadosalta.ar')
+    PUBLIC_IP = os.getenv('PUBLIC_IP', '')
     
     # CORS - Dinámico basado en dominio configurado
     API_DOMAIN = os.getenv('API_DOMAIN', 'api-dev.hospitalprivadosalta.ar')

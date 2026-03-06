@@ -50,6 +50,23 @@ class InstanceManager:
         
         return instances
     
+    def list_production_instances(self):
+        """Lista solo las instancias de producción válidas para clonar"""
+        self._init_paths()
+        instances = []
+        
+        if os.path.exists(self.prod_root):
+            for name in os.listdir(self.prod_root):
+                path = os.path.join(self.prod_root, name)
+                # Filtrar solo directorios válidos con odoo.conf
+                if os.path.isdir(path) and os.path.exists(os.path.join(path, 'odoo.conf')):
+                    # Excluir directorios especiales
+                    if name not in ['temp', 'backups']:
+                        info = self._get_instance_info(name, path, 'production')
+                        instances.append(info)
+        
+        return instances
+    
     def _get_instance_info(self, name, path, env_type):
         """Obtiene información de una instancia"""
         info = {
@@ -70,8 +87,8 @@ class InstanceManager:
                 with open(info_file, 'r', encoding='utf-8') as f:
                     content = f.read()
                     
-                    # Extraer información con regex
-                    port_match = re.search(r'Puerto:\s*(\d+)', content)
+                    # Extraer información con regex (soporta formato con y sin emojis)
+                    port_match = re.search(r'Puerto(?:\s+HTTP)?:\s*(\d+)', content)
                     if port_match:
                         info['port'] = int(port_match.group(1))
                     
@@ -83,7 +100,8 @@ class InstanceManager:
                     if db_match:
                         info['database'] = db_match.group(1)
                     
-                    service_match = re.search(r'Servicio systemd:\s*([^\s]+)', content)
+                    # Buscar servicio con varios formatos posibles
+                    service_match = re.search(r'(?:Servicio(?:\s+systemd)?|🧩\s+Servicio):\s*([^\s]+)', content)
                     if service_match:
                         info['service'] = service_match.group(1)
             except Exception as e:
@@ -148,9 +166,324 @@ class InstanceManager:
                 instance['service_details'] = f"Error: {str(e)}"
         
         return instance
+
+    def _extract_conf_value(self, conf_content: str, key: str):
+        pattern = rf'^\s*{re.escape(key)}\s*=\s*(.+?)\s*$'
+        match = re.search(pattern, conf_content, re.MULTILINE)
+        return match.group(1).strip() if match else None
+
+    def _infer_dev_context(self, instance_name: str, instance_path: str):
+        conf_path = os.path.join(instance_path, 'odoo.conf')
+        if not os.path.exists(conf_path):
+            return None
+
+        try:
+            with open(conf_path, 'r', encoding='utf-8') as f:
+                conf_content = f.read()
+        except Exception:
+            return None
+
+        dev_db = self._extract_conf_value(conf_content, 'db_name')
+        if not dev_db:
+            return None
+
+        prefix = f'{instance_name}-'
+        if dev_db.startswith(prefix):
+            prod_db = dev_db[len(prefix):]
+        else:
+            match = re.search(r'(prod-[A-Za-z0-9_-]+)$', dev_db)
+            prod_db = match.group(1) if match else None
+
+        if not prod_db:
+            return None
+
+        return {
+            'instance_name': instance_name,
+            'instance_path': instance_path,
+            'prod_db': prod_db,
+            'dev_db': dev_db,
+            'prod_dir': os.path.join(self.prod_root, prod_db),
+            'scripts_path': self.scripts_path,
+        }
+
+    def _ensure_dev_action_scripts(self, instance_name: str, instance_path: str):
+        """Regenera scripts auxiliares si faltan en una instancia dev."""
+        self._init_paths()
+        context = self._infer_dev_context(instance_name, instance_path)
+        if not context:
+            return False, 'No se pudo inferir contexto de la instancia desde odoo.conf'
+
+        update_db_template = """#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Script para actualizar la BD de desarrollo desde producción
+
+PROD_DB="__PROD_DB__"
+DEV_DB="__DEV_DB__"
+INSTANCE_NAME="__INSTANCE_NAME__"
+
+echo "🔄 Actualizando base de datos de desarrollo desde producción..."
+echo "   Producción: $PROD_DB"
+echo "   Desarrollo: $DEV_DB"
+
+if [ -t 0 ]; then
+  read -p "Confirmar actualización (s/n): " CONFIRM
+else
+  read CONFIRM
+fi
+if [[ "$CONFIRM" != "s" ]] && [[ "$CONFIRM" != "S" ]]; then
+  echo "❌ Cancelado."
+  exit 1
+fi
+
+echo "⏹️  Deteniendo servicio Odoo..."
+sudo systemctl stop "odoo19e-$INSTANCE_NAME"
+
+echo "🗄️  Eliminando BD de desarrollo actual..."
+sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DEV_DB';" >/dev/null 2>&1
+sudo -u postgres dropdb "$DEV_DB" 2>/dev/null
+
+echo "📦 Creando dump de producción..."
+sudo -u postgres pg_dump "$PROD_DB" > "/tmp/${DEV_DB}_dump.sql"
+
+echo "🔄 Restaurando en desarrollo..."
+sudo -u postgres createdb "$DEV_DB" -O "mtg" --encoding='UTF8'
+sudo -u postgres psql -d "$DEV_DB" < "/tmp/${DEV_DB}_dump.sql"
+rm -f "/tmp/${DEV_DB}_dump.sql"
+
+echo "🔐 Configurando permisos..."
+sudo -u postgres psql -d "$DEV_DB" -c "GRANT ALL ON SCHEMA public TO mtg;" > /dev/null
+sudo -u postgres psql -d "$DEV_DB" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO mtg;" > /dev/null
+sudo -u postgres psql -d "$DEV_DB" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO mtg;" > /dev/null
+sudo -u postgres psql -d "$DEV_DB" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO mtg;" > /dev/null
+
+echo "📁 Sincronizando filestore..."
+FILESTORE_BASE="/home/go/.local/share/Odoo/filestore"
+PROD_FILESTORE="$FILESTORE_BASE/$PROD_DB"
+DEV_FILESTORE="$FILESTORE_BASE/$DEV_DB"
+if [[ -d "$PROD_FILESTORE" ]]; then
+  mkdir -p "$DEV_FILESTORE"
+  rsync -a --delete "$PROD_FILESTORE/" "$DEV_FILESTORE/"
+  echo "✅ Filestore sincronizado ($(find $DEV_FILESTORE -type f | wc -l) archivos)"
+fi
+
+echo "🎨 Regenerando assets..."
+cd "__BASE_DIR__"
+source venv/bin/activate
+./venv/bin/python3 ./odoo-server/odoo-bin -c ./odoo.conf --update=all --stop-after-init
+
+echo "🛡️  Aplicando neutralización post-update..."
+"__SCRIPTS_PATH__/odoo/neutralize-database-sql.sh" "$DEV_DB"
+
+echo "▶️  Iniciando servicio Odoo..."
+sudo systemctl start "odoo19e-$INSTANCE_NAME"
+
+echo "✅ Base de datos actualizada correctamente."
+"""
+
+        update_files_template = """#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Script para actualizar archivos de desarrollo desde producción
+
+PROD_DIR="__PROD_DIR__"
+DEV_DIR="__BASE_DIR__"
+INSTANCE_NAME="__INSTANCE_NAME__"
+
+echo "🔄 Actualizando archivos desde producción..."
+echo "   Producción: $PROD_DIR"
+echo "   Desarrollo: $DEV_DIR"
+
+if [ -t 0 ]; then
+  read -p "Confirmar actualización (s/n): " CONFIRM
+else
+  read CONFIRM
+fi
+if [[ "$CONFIRM" != "s" ]] && [[ "$CONFIRM" != "S" ]]; then
+  echo "❌ Cancelado."
+  exit 1
+fi
+
+echo "⏹️  Deteniendo servicio Odoo..."
+sudo systemctl stop "odoo19e-$INSTANCE_NAME"
+
+echo "💾 Haciendo backup de custom_addons..."
+if [[ -d "$DEV_DIR/custom_addons" ]]; then
+  cp -r "$DEV_DIR/custom_addons" "$DEV_DIR/custom_addons.backup"
+fi
+
+echo "🗑️  Eliminando odoo-server actual..."
+rm -rf "$DEV_DIR/odoo-server"
+
+echo "📦 Copiando archivos desde producción..."
+mkdir -p "$DEV_DIR/odoo-server"
+cp -r "$PROD_DIR/odoo-server/"* "$DEV_DIR/odoo-server/"
+
+echo "🔄 Restaurando custom_addons..."
+if [[ -d "$DEV_DIR/custom_addons.backup" ]]; then
+  rm -rf "$DEV_DIR/custom_addons"
+  mv "$DEV_DIR/custom_addons.backup" "$DEV_DIR/custom_addons"
+fi
+
+echo "🐍 Actualizando dependencias Python..."
+source "$DEV_DIR/venv/bin/activate"
+pip install --upgrade pip wheel
+pip install -r "$DEV_DIR/odoo-server/requirements.txt"
+pip install phonenumbers gevent greenlet
+
+echo "▶️  Iniciando servicio Odoo..."
+sudo systemctl start "odoo19e-$INSTANCE_NAME"
+
+echo "✅ Archivos actualizados correctamente."
+"""
+
+        sync_filestore_template = """#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Script para sincronizar filestore desde producción
+
+PROD_DB="__PROD_DB__"
+DEV_DB="__DEV_DB__"
+INSTANCE_NAME="__INSTANCE_NAME__"
+
+echo "📁 Sincronizando filestore desde producción..."
+echo "   Producción: $PROD_DB"
+echo "   Desarrollo: $DEV_DB"
+
+if [ -t 0 ]; then
+  read -p "Confirmar sincronización (s/n): " CONFIRM
+else
+  read CONFIRM
+fi
+if [[ "$CONFIRM" != "s" ]] && [[ "$CONFIRM" != "S" ]]; then
+  echo "❌ Cancelado."
+  exit 1
+fi
+
+echo "⏹️  Deteniendo servicio Odoo..."
+sudo systemctl stop "odoo19e-$INSTANCE_NAME"
+
+echo "📁 Sincronizando filestore..."
+FILESTORE_BASE="/home/go/.local/share/Odoo/filestore"
+PROD_FILESTORE="$FILESTORE_BASE/$PROD_DB"
+DEV_FILESTORE="$FILESTORE_BASE/$DEV_DB"
+
+if [[ -d "$PROD_FILESTORE" ]]; then
+  mkdir -p "$DEV_FILESTORE"
+  rsync -a --delete "$PROD_FILESTORE/" "$DEV_FILESTORE/"
+  FILE_COUNT=$(find "$DEV_FILESTORE" -type f | wc -l)
+  echo "✅ Filestore sincronizado ($FILE_COUNT archivos)"
+else
+  echo "⚠️  No se encontró filestore de producción en $PROD_FILESTORE"
+fi
+
+echo "▶️  Iniciando servicio Odoo..."
+sudo systemctl start "odoo19e-$INSTANCE_NAME"
+
+echo "✅ Filestore sincronizado correctamente."
+"""
+
+        regenerate_assets_template = """#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Script para regenerar assets de Odoo
+
+INSTANCE_NAME="__INSTANCE_NAME__"
+BASE_DIR="__BASE_DIR__"
+
+echo "🎨 Regenerando assets de Odoo..."
+echo "   Instancia: $INSTANCE_NAME"
+
+if [ -t 0 ]; then
+  read -p "Confirmar regeneración (s/n): " CONFIRM
+else
+  read CONFIRM
+fi
+if [[ "$CONFIRM" != "s" ]] && [[ "$CONFIRM" != "S" ]]; then
+  echo "❌ Cancelado."
+  exit 1
+fi
+
+echo "⏹️  Deteniendo servicio Odoo..."
+sudo systemctl stop "odoo19e-$INSTANCE_NAME"
+sleep 5
+
+echo "🎨 Regenerando assets..."
+cd "$BASE_DIR"
+source venv/bin/activate
+
+TEMP_LOG="/tmp/odoo-regenerate-$INSTANCE_NAME.log"
+./venv/bin/python3 ./odoo-server/odoo-bin -c ./odoo.conf --update=all --stop-after-init > "$TEMP_LOG" 2>&1 &
+ODOO_PID=$!
+
+echo "   Procesando (esto puede tardar 1-2 minutos)..."
+while kill -0 $ODOO_PID 2>/dev/null; do
+  sleep 2
+  echo -n "."
+done
+echo ""
+
+wait $ODOO_PID
+EXIT_CODE=$?
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "✅ Regeneración completada exitosamente"
+else
+  echo "⚠️  Proceso terminó con código: $EXIT_CODE"
+  echo "   Ver log completo en: $TEMP_LOG"
+fi
+
+echo "▶️  Iniciando servicio Odoo..."
+sudo systemctl start "odoo19e-$INSTANCE_NAME"
+
+echo "✅ Assets regenerados correctamente"
+"""
+
+        replacements = {
+            '__PROD_DB__': context['prod_db'],
+            '__DEV_DB__': context['dev_db'],
+            '__INSTANCE_NAME__': context['instance_name'],
+            '__BASE_DIR__': context['instance_path'],
+            '__PROD_DIR__': context['prod_dir'],
+            '__SCRIPTS_PATH__': context['scripts_path'],
+        }
+
+        scripts = {
+            'update-db.sh': update_db_template,
+            'update-files.sh': update_files_template,
+            'sync-filestore.sh': sync_filestore_template,
+            'regenerate-assets.sh': regenerate_assets_template,
+        }
+
+        created_scripts = []
+        for script_name, template in scripts.items():
+            script_path = os.path.join(instance_path, script_name)
+            if os.path.exists(script_path):
+                continue
+
+            script_content = template
+            for source, target in replacements.items():
+                script_content = script_content.replace(source, target)
+
+            with open(script_path, 'w', encoding='utf-8') as f:
+                f.write(script_content)
+            os.chmod(script_path, 0o755)
+            created_scripts.append(script_name)
+
+        return True, created_scripts
     
-    def create_dev_instance(self, name, certbot_email=None):
-        """Crea una nueva instancia de desarrollo"""
+    def create_dev_instance(
+        self,
+        name: str,
+        source_instance: str = None,
+        neutralize: bool = True,
+        git_branch: str = '',
+        system_username: str = '',
+        system_instance_accesses=None,
+    ):
+        """
+        Crea una nueva instancia de desarrollo clonando desde producción
+        Args:
+            name: Nombre de la instancia (sin prefijo dev-)
+            source_instance: Instancia de producción a clonar (opcional, usa default del .env si no se especifica)
+            neutralize: Si True, neutraliza la base de datos (elimina licencia, desactiva crons/correos)
+            git_branch: Rama Git por defecto para esta instancia (opcional)
+        """
         self._init_paths()
         script_path = os.path.join(self.scripts_path, 'odoo/create-dev-instance.sh')
         
@@ -158,33 +491,145 @@ class InstanceManager:
             return {'success': False, 'error': 'Script de creación no encontrado'}
         
         try:
-            # Construir comando con email opcional para certbot
-            cmd = ['/bin/bash', script_path, name]
-            if certbot_email:
-                cmd.append(certbot_email)
+            # Preparar argumentos del script
+            script_args = ['/bin/bash', script_path, name]
+            
+            # Si se especificó una instancia de producción, agregarla como segundo argumento
+            if source_instance:
+                script_args.append(source_instance)
+            else:
+                script_args.append('')  # Placeholder para mantener posiciones
+            
+            # Agregar opción de neutralización como tercer argumento
+            neutralize_arg = 'neutralize' if neutralize else 'no-neutralize'
+            script_args.append(neutralize_arg)
+            
+            # Agregar auto-confirm como cuarto argumento (modo no interactivo)
+            script_args.append('true')
+            
+            # Agregar rama Git como quinto argumento (opcional)
+            script_args.append(git_branch if git_branch else '')
+
+            # Agregar usuario Linux y asignaciones para ACL (opcional)
+            script_args.append(system_username if system_username else '')
+            system_access_arg = ','.join(system_instance_accesses or [])
+            script_args.append(system_access_arg)
+            
+            # El nombre de la instancia completa incluye el prefijo "dev-"
+            instance_name = f'dev-{name}'
+            log_file_path = f'/tmp/odoo-create-{instance_name}.log'
             
             # Ejecutar script en background desacoplado del proceso padre
-            with open(f'/tmp/odoo-create-dev-{name}.log', 'w') as log_file:
+            with open(log_file_path, 'w') as log_file:
                 process = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,
+                    script_args,
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
-                    text=True
+                    text=True,
+                    bufsize=1
                 )
-                # Enviar confirmación
-                process.stdin.write('s\n')
-                process.stdin.close()
-            logger.info(f"Process started for instance {name}")
-            logger.info(f"Process started for instance {name}")
+            logger.info(f"Process started for dev instance {instance_name} from source {source_instance or 'default'} (neutralize={neutralize}, git_branch={git_branch or 'default'})")
             
             return {
                 'success': True,
-                'message': f'Creación de instancia {name} iniciada. Ver logs: /tmp/odoo-create-dev-{name}.log',
-                'log_file': f'/tmp/odoo-create-dev-{name}.log'
+                'message': f'Creación de instancia {instance_name} iniciada. Ver logs: {log_file_path}',
+                'log_file': log_file_path,
+                'instance_name': instance_name,  # Devolver el nombre completo de la instancia
+                'git_branch': git_branch  # Devolver la rama Git configurada
             }
         except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def create_prod_instance(self, name, version='19', edition='enterprise', ssl_method='letsencrypt'):
+        """Crea una nueva instancia de producción con subdominio obligatorio
+        
+        Args:
+            name: Nombre de la instancia (será usado como subdominio)
+            version: Versión de Odoo (19 o 18)
+            edition: Edición (enterprise o community)
+            ssl_method: Método SSL a usar (cloudflare, letsencrypt, http)
+        
+        Returns:
+            dict: Resultado de la operación
+        """
+        self._init_paths()
+        
+        # Validar que el nombre no intente usar el dominio raíz
+        domain_root = current_app.config.get('DOMAIN_ROOT', 'softrigx.com')
+        forbidden_names = [domain_root, 'production', 'prod', 'www', 'api', 'mail', 'ftp']
+        
+        if name.lower() in forbidden_names:
+            return {
+                'success': False, 
+                'error': f'Nombre prohibido. "{name}" está reservado para proteger el dominio principal.'
+            }
+        
+        # Validar formato DNS válido
+        import re
+        if not re.match(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$', name.lower()):
+            return {
+                'success': False,
+                'error': 'Nombre inválido. Debe contener solo letras minúsculas, números y guiones.'
+            }
+        
+        # Validar versión y edición
+        if version not in ['18', '19']:
+            return {'success': False, 'error': 'Versión debe ser 18 o 19'}
+        
+        if edition not in ['enterprise', 'community']:
+            return {'success': False, 'error': 'Edición debe ser enterprise o community'}
+        
+        script_path = os.path.join(self.scripts_path, 'odoo/create-prod-instance.sh')
+        
+        if not os.path.exists(script_path):
+            return {'success': False, 'error': 'Script de creación de producción no encontrado'}
+        
+        try:
+            instance_name = f'prod-{name.lower()}'
+            pid_file = f"/tmp/{instance_name}.pid"
+            status_file = f"/tmp/{instance_name}.status"
+            log_file_path = f'/tmp/odoo-create-{instance_name}.log'
+            
+            # Mapear método SSL a número (1=letsencrypt, 2=cloudflare, 3=http)
+            ssl_map = {'letsencrypt': '1', 'cloudflare': '2', 'http': '3'}
+            ssl_arg = ssl_map.get(ssl_method, '1')
+
+            # Ejecutar script en background desacoplado del proceso padre
+            # Argumentos: nombre, version, edition, ssl_method
+            log_fd = os.open(log_file_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+            process = subprocess.Popen(
+                ['/bin/bash', script_path, name, version, edition, ssl_arg],
+                stdout=log_fd,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                text=True,
+                bufsize=1
+            )
+            os.close(log_fd)
+
+            # Guardar PID y estado inicial
+            with open(pid_file, 'w') as f:
+                f.write(str(process.pid))
+
+            with open(status_file, 'w') as f:
+                f.write("running")
+            
+            logger.info(f"Production instance creation started: {instance_name} (Odoo {version} {edition})")
+            
+            return {
+                'success': True,
+                'message': f'Creación de instancia de producción {instance_name} iniciada. Dominio: {name}.{domain_root} - Odoo {version} {edition}',
+                'log_file': log_file_path,
+                'instance_name': instance_name,
+                'domain': f'{name}.{domain_root}',
+                'version': version,
+                'edition': edition,
+                'pid': process.pid,
+                'status_file': status_file
+            }
+        except Exception as e:
+            logger.error(f"Error creating production instance: {e}")
             return {'success': False, 'error': str(e)}
     
     def delete_instance(self, instance_name):
@@ -225,6 +670,51 @@ class InstanceManager:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
+    def delete_production_instance(self, instance_name, confirmation):
+        """Elimina una instancia de producción con doble confirmación"""
+        self._init_paths()
+        script_path = os.path.join(self.scripts_path, 'odoo/remove-production.sh')
+        
+        if not os.path.exists(script_path):
+            return {'success': False, 'error': 'Script de eliminación no encontrado'}
+        
+        # Validar confirmación
+        expected_confirmation = f"BORRAR{instance_name}"
+        if confirmation != expected_confirmation:
+            return {'success': False, 'error': f'Confirmación incorrecta. Debes escribir exactamente: {expected_confirmation}'}
+        
+        try:
+            # Ejecutar script con confirmación automática y guardar log
+            log_path = f'/tmp/odoo-delete-prod-{instance_name}.log'
+            with open(log_path, 'w') as log_file:
+                process = subprocess.Popen(
+                    ['/bin/bash', script_path],
+                    stdin=subprocess.PIPE,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+                
+                # Enviar nombre de instancia y confirmación
+                process.stdin.write(f"{instance_name}\n{expected_confirmation}\n")
+                process.stdin.close()
+                
+                # Esperar hasta 5 minutos para la eliminación
+                process.wait(timeout=300)
+            
+            if process.returncode == 0:
+                return {'success': True, 'message': f'Instancia de producción {instance_name} eliminada correctamente', 'log_file': log_path}
+            else:
+                # Leer el log para ver qué falló
+                with open(log_path, 'r') as log_file:
+                    error_log = log_file.read()
+                return {'success': False, 'error': f'Error en eliminación. Ver log: {log_path}', 'log': error_log}
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'La eliminación tardó demasiado tiempo (timeout de 5 minutos)'}
+        except Exception as e:
+            logger.error(f"Error deleting production instance: {e}")
+            return {'success': False, 'error': str(e)}
+    
     def update_instance_db(self, instance_name, neutralize=True):
         """Actualiza la base de datos de una instancia de desarrollo"""
         self._init_paths()
@@ -232,7 +722,10 @@ class InstanceManager:
         script_path = os.path.join(instance_path, 'update-db.sh')
         
         if not os.path.exists(script_path):
-            return {'success': False, 'error': 'Script update-db.sh no encontrado'}
+            ok, details = self._ensure_dev_action_scripts(instance_name, instance_path)
+            if not ok or not os.path.exists(script_path):
+                return {'success': False, 'error': f'Script update-db.sh no encontrado. {details}'}
+            logger.info(f'Scripts regenerados para {instance_name}: {details}')
         
         try:
             # Responder automáticamente: s para continuar, s/n para neutralizar
@@ -268,7 +761,10 @@ class InstanceManager:
         script_path = os.path.join(instance_path, 'update-files.sh')
         
         if not os.path.exists(script_path):
-            return {'success': False, 'error': 'Script update-files.sh no encontrado'}
+            ok, details = self._ensure_dev_action_scripts(instance_name, instance_path)
+            if not ok or not os.path.exists(script_path):
+                return {'success': False, 'error': f'Script update-files.sh no encontrado. {details}'}
+            logger.info(f'Scripts regenerados para {instance_name}: {details}')
         
         try:
             # Ejecutar script en background con log
@@ -429,7 +925,10 @@ class InstanceManager:
         script_path = os.path.join(instance_path, 'sync-filestore.sh')
         
         if not os.path.exists(script_path):
-            return {'success': False, 'error': 'Script sync-filestore.sh no encontrado'}
+            ok, details = self._ensure_dev_action_scripts(instance_name, instance_path)
+            if not ok or not os.path.exists(script_path):
+                return {'success': False, 'error': f'Script sync-filestore.sh no encontrado. {details}'}
+            logger.info(f'Scripts regenerados para {instance_name}: {details}')
         
         try:
             # Ejecutar script en background con log
@@ -456,40 +955,32 @@ class InstanceManager:
             return {'success': False, 'error': str(e)}
     
     def regenerate_assets(self, instance_name):
-        """Regenera los assets de una instancia (producción o desarrollo)"""
+        """Regenera los assets de una instancia de desarrollo"""
         self._init_paths()
+        instance_path = os.path.join(self.dev_root, instance_name)
+        script_path = os.path.join(instance_path, 'regenerate-assets.sh')
         
-        # Determinar si es producción o desarrollo
-        dev_path = os.path.join(self.dev_root, instance_name)
-        prod_path = os.path.join(self.prod_root, instance_name)
-        
-        if os.path.exists(dev_path):
-            instance_path = dev_path
-        elif os.path.exists(prod_path):
-            instance_path = prod_path
-        else:
-            return {'success': False, 'error': f'Instancia {instance_name} no encontrada'}
-        
-        # Usar script centralizado desde api-dev
-        centralized_script = '/home/go/api-dev/scripts/odoo/regenerate-assets.sh'
-        
-        if not os.path.exists(centralized_script):
-            return {'success': False, 'error': 'Script centralizado regenerate-assets.sh no encontrado'}
-        
-        # Determinar ambiente basado en la ruta
-        environment = 'develop' if '/develop/' in instance_path else 'production'
+        if not os.path.exists(script_path):
+            ok, details = self._ensure_dev_action_scripts(instance_name, instance_path)
+            if not ok or not os.path.exists(script_path):
+                return {'success': False, 'error': f'Script regenerate-assets.sh no encontrado. {details}'}
+            logger.info(f'Scripts regenerados para {instance_name}: {details}')
         
         try:
-            # Ejecutar script centralizado en background con log
+            # Ejecutar script en background con log
             with open(f'/tmp/odoo-regenerate-assets-{instance_name}.log', 'w') as log_file:
                 process = subprocess.Popen(
-                    ['/bin/bash', centralized_script, '--force', instance_name, environment],
+                    ['/bin/bash', script_path],
+                    stdin=subprocess.PIPE,
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
+                    cwd=instance_path,
                     text=True
                 )
-                # No necesitamos enviar confirmación porque usamos --force
+                # Enviar confirmación
+                process.stdin.write('s\n')
+                process.stdin.close()
             
             return {
                 'success': True,

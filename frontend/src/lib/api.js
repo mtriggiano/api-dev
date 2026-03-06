@@ -7,7 +7,7 @@ const API_URL = import.meta.env.MODE === 'production'
   : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
 
 const api = axios.create({
-  timeout: 0, // Sin timeout para uploads grandes
+  timeout: 30000, // Timeout seguro para evitar requests colgados
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
@@ -66,37 +66,48 @@ export const instances = {
     api.get('/api/instances'),
   
   get: (name) => 
-    api.get(`/api/instances/${name}`),
+    api.get(`/api/instances/${encodeURIComponent(name)}`),
   
-  create: (name, certbotEmail) => 
-    api.post('/api/instances/create', { name, certbot_email: certbotEmail }),
+  // Método actualizado: ahora acepta sourceInstance
+  create: (name, sourceInstance = null, neutralize = true, gitBranch = '') => 
+    api.post('/api/instances/create', { name, sourceInstance, neutralize, gitBranch }),
+  
+  // Nuevo método: obtener instancias de producción disponibles
+  getProductionInstances: () => 
+    api.get('/api/instances/production-instances'),
+  
+  createProduction: (name, version = '19', edition = 'enterprise', sslMethod = 'letsencrypt') =>
+    api.post('/api/instances/create-production', { name, version, edition, ssl_method: sslMethod }),
   
   delete: (name) => 
-    api.delete(`/api/instances/${name}`),
+    api.delete(`/api/instances/${encodeURIComponent(name)}`),
+  
+  deleteProduction: (name, confirmation) => 
+    api.delete(`/api/instances/production/${encodeURIComponent(name)}`, { data: { confirmation } }),
   
   updateDb: (name, neutralize = true) => 
-    api.post(`/api/instances/${name}/update-db`, { neutralize }),
+    api.post(`/api/instances/${encodeURIComponent(name)}/update-db`, { neutralize }),
   
   updateFiles: (name) => 
-    api.post(`/api/instances/${name}/update-files`),
+    api.post(`/api/instances/${encodeURIComponent(name)}/update-files`),
   
   syncFilestore: (name) => 
-    api.post(`/api/instances/${name}/sync-filestore`),
+    api.post(`/api/instances/${encodeURIComponent(name)}/sync-filestore`),
   
   regenerateAssets: (name) => 
-    api.post(`/api/instances/${name}/regenerate-assets`),
+    api.post(`/api/instances/${encodeURIComponent(name)}/regenerate-assets`),
   
   getLogs: (name, lines = 100, type = 'systemd') => 
-    api.get(`/api/instances/${name}/logs?lines=${lines}&type=${type}`),
+    api.get(`/api/instances/${encodeURIComponent(name)}/logs?lines=${lines}&type=${type}`),
   
   restart: (name) => 
-    api.post(`/api/instances/${name}/restart`),
+    api.post(`/api/instances/${encodeURIComponent(name)}/restart`),
   
   getCreationLog: (name) => 
-    api.get(`/api/instances/creation-log/${name}`),
+    api.get(`/api/instances/creation-log/${encodeURIComponent(name)}`),
   
   getUpdateLog: (name, action) => 
-    api.get(`/api/instances/update-log/${name}/${action}`),
+    api.get(`/api/instances/update-log/${encodeURIComponent(name)}/${encodeURIComponent(action)}`),
 };
 
 export const logs = {
@@ -215,17 +226,13 @@ export const github = {
   
   getDeployLogs: (instanceName, limit = 50) => 
     api.get(`/api/github/deploy-logs/${instanceName}?limit=${limit}`),
-
-  // Reset branch from main
-  resetHard: (instanceName, mode) => 
-    api.post("/api/github/reset-hard", { instance_name: instanceName, mode }),
-  resetFromMain: (instanceName) => 
-    api.post(`/api/github/reset-from-main/${instanceName}`),
 };
 
 export default api;
 
+// API V2 para backups multi-instancia
 export const backupV2 = {
+  // Gestión de instancias
   listInstances: () => 
     api.get('/api/backup/v2/instances'),
   
@@ -238,6 +245,7 @@ export const backupV2 = {
   toggleAutoBackup: (instanceName, enabled) => 
     api.post(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/toggle`, { enabled }),
   
+  // Backups
   listBackups: (instanceName) => 
     api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backups`),
   
@@ -263,12 +271,14 @@ export const backupV2 = {
       onUploadProgress: onProgress
     }),
   
+  // Logs
   getBackupLog: (instanceName) => 
     api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/backup-log`),
   
   getRestoreLog: (instanceName) => 
     api.get(`/api/backup/v2/instances/${encodeURIComponent(instanceName)}/restore-log`),
   
+  // Estadísticas
   getGlobalStats: () => 
     api.get('/api/backup/v2/stats'),
 };

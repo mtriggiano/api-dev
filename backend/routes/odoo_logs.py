@@ -1,23 +1,13 @@
 from flask import Blueprint, jsonify, request, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import User
+from config import Config
+from services.access_control import can_user_access_instance
 import os
 import re
 from collections import deque
 
 odoo_logs_bp = Blueprint('odoo_logs', __name__)
-
-# Mapeo de instancias a rutas de logs
-INSTANCE_LOG_PATHS = {
-    'production': '/home/go/apps/production/odoo/production',
-    'dev-mtg': '/home/go/apps/develop/odoo/dev-mtg',
-    'dev-ng': '/home/go/apps/develop/odoo/dev-ng',
-}
-
-# Tipos de log disponibles por instancia
-LOG_TYPES = {
-    'odoo': 'odoo.log',
-}
 
 # Regex para parsear líneas de log de Odoo
 # Formato: 2026-02-08 15:03:42,089 1200 WARNING dev-mtg-production odoo.http: mensaje
@@ -29,6 +19,56 @@ LOG_LINE_REGEX = re.compile(
     r'(\S+):\s*'                                             # logger
     r'(.*)'                                                  # message
 )
+
+
+def _get_instance_log_path(instance_name):
+    """Obtiene la ruta base de logs para una instancia dinámicamente"""
+    # Verificar en producción
+    prod_path = os.path.join(Config.PROD_ROOT, instance_name)
+    if os.path.isdir(prod_path):
+        return prod_path
+    
+    # Verificar en desarrollo
+    dev_path = os.path.join(Config.DEV_ROOT, instance_name)
+    if os.path.isdir(dev_path):
+        return dev_path
+    
+    return None
+
+
+def _get_service_name(instance_name):
+    """Obtiene el nombre del servicio systemd para una instancia"""
+    # Intentar detectar el servicio automáticamente
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['systemctl', 'list-units', '--type=service', '--no-pager', '-q'],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.split('\n'):
+            if instance_name in line and 'odoo' in line.lower():
+                return line.strip().split()[0].replace('.service', '')
+    except:
+        pass
+    
+    # Fallback: intentar nombres comunes
+    candidates = [
+        f'odoo19e-{instance_name}',
+        f'odoo-{instance_name}',
+        f'odoo19-{instance_name}',
+    ]
+    for candidate in candidates:
+        try:
+            result = subprocess.run(
+                ['systemctl', 'is-active', candidate],
+                capture_output=True, text=True, timeout=3
+            )
+            if result.stdout.strip() in ('active', 'inactive', 'failed'):
+                return candidate
+        except:
+            continue
+    
+    return None
 
 
 def tail_file(filepath, lines=500):
@@ -102,8 +142,11 @@ def get_available_logs(instance_name):
     
     if not user or user.role not in ['admin', 'developer', 'viewer']:
         return jsonify({'error': 'Permisos insuficientes'}), 403
+
+    if not can_user_access_instance(user, instance_name):
+        return jsonify({'error': 'No tienes acceso a esta instancia'}), 403
     
-    base_path = INSTANCE_LOG_PATHS.get(instance_name)
+    base_path = _get_instance_log_path(instance_name)
     if not base_path:
         return jsonify({'error': f'Instancia no encontrada: {instance_name}'}), 404
     
@@ -148,8 +191,11 @@ def view_log(instance_name):
     
     if not user or user.role not in ['admin', 'developer', 'viewer']:
         return jsonify({'error': 'Permisos insuficientes'}), 403
+
+    if not can_user_access_instance(user, instance_name):
+        return jsonify({'error': 'No tienes acceso a esta instancia'}), 403
     
-    base_path = INSTANCE_LOG_PATHS.get(instance_name)
+    base_path = _get_instance_log_path(instance_name)
     if not base_path:
         return jsonify({'error': f'Instancia no encontrada: {instance_name}'}), 404
     
@@ -281,16 +327,6 @@ def _read_systemd_log(instance_name, lines_count, level_filter, search):
         
     except Exception as e:
         return jsonify({'error': f'Error leyendo logs de systemd: {str(e)}'}), 500
-
-
-def _get_service_name(instance_name):
-    """Obtiene el nombre del servicio systemd para una instancia"""
-    service_map = {
-        'production': 'odoo19e-production',
-        'dev-mtg': 'odoo19e-dev-mtg',
-        'dev-ng': 'odoo19e-dev-ng',
-    }
-    return service_map.get(instance_name)
 
 
 def _human_size(size_bytes):

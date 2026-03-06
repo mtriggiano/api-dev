@@ -3,13 +3,24 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Instances from './components/Instances';
 import Logs from './components/Logs';
-import Backups from './components/Backups';
 import BackupsV2 from './components/BackupsV2';
+import Users from './components/Users';
+import MyAccount from './components/MyAccount';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('access_token');
   return token ? children : <Navigate to="/login" />;
+}
+
+function AdminRoute({ children }) {
+  const token = localStorage.getItem('access_token');
+  if (!token) {
+    return <Navigate to="/login" />;
+  }
+
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  return user?.role === 'admin' ? children : <Navigate to="/" />;
 }
 
 function App() {
@@ -50,11 +61,7 @@ function App() {
         <Route
           path="/backups"
           element={
-            <PrivateRoute>
-              <Layout>
-                <Backups />
-              </Layout>
-            </PrivateRoute>
+            <Navigate to="/backups-v2" />
           }
         />
         <Route
@@ -65,6 +72,26 @@ function App() {
                 <BackupsV2 />
               </Layout>
             </PrivateRoute>
+          }
+        />
+        <Route
+          path="/account"
+          element={
+            <PrivateRoute>
+              <Layout>
+                <MyAccount />
+              </Layout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <AdminRoute>
+              <Layout>
+                <Users />
+              </Layout>
+            </AdminRoute>
           }
         />
       </Routes>

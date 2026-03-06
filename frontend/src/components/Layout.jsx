@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Server, FileText, Database, LogOut, Menu, X, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, Server, FileText, Database, LogOut, Menu, X, Moon, Sun, Users, UserCog } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 export default function Layout({ children }) {
@@ -19,9 +19,10 @@ export default function Layout({ children }) {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Instancias', href: '/instances', icon: Server },
-    { name: 'Backups', href: '/backups', icon: Database },
     { name: 'Backups V2', href: '/backups-v2', icon: Database },
     { name: 'Logs', href: '/logs', icon: FileText },
+    { name: 'Mi Cuenta', href: '/account', icon: UserCog },
+    ...(user.role === 'admin' ? [{ name: 'Usuarios', href: '/users', icon: Users }] : []),
   ];
 
   return (
